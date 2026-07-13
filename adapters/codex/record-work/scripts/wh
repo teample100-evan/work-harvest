@@ -17,4 +17,8 @@ if [[ ! -f "$harness_root/package.json" || ! -f "$harness_root/bin/wh.js" ]]; th
   exit 1
 fi
 
+# Keep business records separate from the tool checkout unless the caller
+# deliberately selects another store.
+export WORK_HARVEST_HOME="${WORK_HARVEST_HOME:-$HOME/work-records}"
+
 exec pnpm --dir "$harness_root" wh "$@"

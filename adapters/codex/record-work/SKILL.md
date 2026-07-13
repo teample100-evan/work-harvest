@@ -15,7 +15,7 @@ Run every Work Harvest command through:
 <skill-dir>/scripts/wh <command>
 ```
 
-The wrapper resolves its CLI checkout from `WORK_HARVEST_CLI_HOME` or the Skill's source checkout. The CLI resolves the data store from `WORK_HARVEST_HOME` or `--root`. Stop and report the missing configuration if the wrapper cannot locate Work Harvest.
+The wrapper resolves its CLI checkout from `WORK_HARVEST_CLI_HOME` or the Skill's source checkout. It stores records in `~/work-records` by default; set `WORK_HARVEST_HOME` or pass `--root` only to use a different data store. Stop and report the missing configuration if the wrapper cannot locate Work Harvest.
 
 ## Workflow
 

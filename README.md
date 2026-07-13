@@ -92,14 +92,16 @@ CLI는 다음 우선순위로 데이터 저장 위치를 정한다.
 2. `WORK_HARVEST_HOME`
 3. 현재 작업 디렉터리
 
+The Codex `record-work` Skill uses `~/work-records` by default, keeping business records separate from this tool repository. To use the same location from a terminal or another agent, set:
+
 ```bash
-export WORK_HARVEST_HOME="$HOME/work/work-harvest"
+export WORK_HARVEST_HOME="$HOME/work-records"
 ```
 
 Codex Skill 래퍼가 CLI checkout을 자동으로 찾지 못하는 경우에만 별도로 지정한다.
 
 ```bash
-export WORK_HARVEST_CLI_HOME="$HOME/work/work-harvest"
+export WORK_HARVEST_CLI_HOME="$HOME/Desktop/projects/work-harvest"
 ```
 
 `WORK_HARVEST_HOME`은 기록 데이터 위치, `WORK_HARVEST_CLI_HOME`은 CLI 코드 위치다.

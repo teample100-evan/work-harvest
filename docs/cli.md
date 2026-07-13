@@ -18,6 +18,8 @@ pnpm wh <command>
 
 `WORK_HARVEST_CLI_HOME`은 Codex Skill 래퍼가 CLI 코드의 checkout을 찾는 용도다. 기록 데이터 위치를 정하는 `WORK_HARVEST_HOME`과 구분한다.
 
+Codex `record-work` Skill은 환경변수가 없으면 `~/work-records`를 기본 데이터 저장소로 사용한다. 따라서 도구 코드 저장소와 실제 업무 기록이 섞이지 않는다.
+
 ## 공통 입력
 
 생성 명령은 JSON 또는 YAML 객체를 파일이나 stdin으로 받는다.

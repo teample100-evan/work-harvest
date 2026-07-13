@@ -95,7 +95,7 @@ CLI는 다음 우선순위로 데이터 저장 위치를 정한다.
 2. `WORK_HARVEST_HOME`
 3. 현재 작업 디렉터리
 
-The Codex `record-work` Skill uses `~/work-records` by default, keeping business records separate from this tool repository. To use the same location from a terminal or another agent, set:
+Codex `record-work` Skill은 기본적으로 `~/work-records`를 사용해 업무 기록과 도구 저장소를 분리한다. 터미널이나 다른 에이전트에서도 같은 위치를 사용하려면 다음과 같이 설정한다.
 
 ```bash
 export WORK_HARVEST_HOME="$HOME/work-records"
@@ -303,6 +303,40 @@ work-item list
 
 Skill은 기존 업무와 일치하는지 먼저 확인하고, 여러 후보가 비슷할 때만 사용자에게 선택을 요청한다. 테스트를 실행하지 않았다면 통과했다고 기록하지 않으며, 측정되지 않은 영향은 추정하지 않는다.
 
+## 사용 시나리오
+
+Work Harvest는 코드 작업뿐 아니라 문서, 기획, 회의, 연구와 운영 업무를 기록할 수 있다. 브랜치나 Codex 세션이 달라도 같은 보고 목표라면 하나의 업무 항목을 유지하고, 한 세션에서 독립된 결과물을 여러 개 만들었다면 업무 항목을 분리한다.
+
+### 브랜치마다 별도 세션을 사용하는 경우
+
+```text
+이 브랜치에서 진행한 인증 API 문서 작업을 기존 AUTH-142 업무에 기록해줘.
+```
+
+### 코드 변경 없는 문서·운영 작업
+
+```text
+오늘 작성한 장애 대응 정책 문서를 완료 업무로 기록해줘.
+```
+
+저장소나 브랜치 없이도 문서, URL, 결정 또는 리뷰를 근거로 기록할 수 있다.
+
+### 작업 후 별도 세션에서 사후 기록
+
+```text
+지난주 월요일부터 수요일까지 배포 가이드를 정리했어. 지금 말한 내용으로 기록해줘.
+```
+
+이 경우 `backfill` 체크포인트로 저장한다. 기록 시각과 실제 작업 기간을 분리하고, 사용자 설명에 기반한 내용은 독립 검증된 사실과 구분한다.
+
+### 한 세션에서 여러 독립 업무를 수행한 경우
+
+```text
+인증 버그 수정과 배포 가이드 작성은 별도 업무로 나눠서 기록해줘.
+```
+
+더 자세한 판단 기준과 10가지 예시는 [사용 시나리오](./docs/usage-scenarios.md)를 참고한다.
+
 ## 일반적인 작업 흐름
 
 ### 긴 세션을 계속 사용하는 경우
@@ -353,6 +387,7 @@ pnpm run check
 - 확인된 결과 없는 완료 기록 거부
 - 최종 기록 시 업무 상태와 context 갱신
 - 체크포인트 Markdown 생성
+- 코드 없는 사후 작업의 기록 시각·실제 작업 기간·사용자 근거 분리
 
 ## 정확성과 보안
 
@@ -370,4 +405,5 @@ pnpm run check
 - [작업 방법론](./docs/work-method.md)
 - [데이터 모델](./docs/data-model.md)
 - [CLI 사용법](./docs/cli.md)
+- [사용 시나리오](./docs/usage-scenarios.md)
 - [Codex Skill](./adapters/codex/record-work/SKILL.md)

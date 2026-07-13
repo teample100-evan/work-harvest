@@ -292,3 +292,92 @@ test("final checkpoint completes the work item and updates context metadata", ()
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("retrospective non-code work preserves capture time and user-supplied work range", () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "work-harvest-test-"));
+  try {
+    const workItem = createPayload("DOC-7");
+    workItem.title = "운영 배포 가이드 작성";
+    workItem.objective = "배포 절차와 장애 복구 순서를 문서화한다.";
+    workItem.classification.work_types = ["documentation", "operation"];
+    workItem.context.current_state = "사후 기록을 시작하기 전이다.";
+
+    const created = run(
+      ["work-item", "create", "--input", "-", "--root", root],
+      workItem,
+    );
+    assert.equal(created.status, 0, created.stderr);
+
+    const captured = run(
+      ["checkpoint", "capture", "--input", "-", "--root", root, "--json"],
+      {
+        id: "CP-20260713-DOC7",
+        work_item_id: "DOC-7",
+        kind: "backfill",
+        captured_at: "2026-07-13T12:00:00+09:00",
+        source: {
+          agent: "manual",
+          surface: "desktop",
+          session_ref: null,
+          task_title: "지난주 문서 작업 기록",
+        },
+        work_period: {
+          start: "2026-07-06",
+          end: "2026-07-08",
+          precision: "range",
+          basis: ["user"],
+          timezone: "Asia/Seoul",
+        },
+        title: "배포 가이드 초안 작성",
+        summary: "사용자 설명에 따르면 배포 가이드 초안을 작성했다.",
+        activities: ["배포 절차와 장애 복구 순서를 문서화했다."],
+        verifications: [
+          {
+            type: "review",
+            description: "배포 가이드 내용 검토",
+            status: "not_run",
+            command: null,
+            evidence_refs: [],
+          },
+        ],
+        outcomes: [
+          {
+            description: "배포 가이드 초안이 작성됐다고 사용자가 보고했다.",
+            impact: "사용자 제공 설명 기준이며 독립적으로 확인하지 않았다.",
+            evidence_refs: [],
+          },
+        ],
+        next_steps: ["문서 링크를 연결하고 내용을 검토한다."],
+        context_update: {
+          current_state: "배포 가이드 초안을 사후 기록했으며 문서 확인이 남아 있다.",
+          verification: {
+            completed: [],
+            pending: ["배포 가이드 문서 확인"],
+          },
+          next_steps: ["문서 링크 연결 및 내용 검토"],
+          risks: ["현재 기록은 사용자 설명에 기반한다."],
+        },
+      },
+    );
+    assert.equal(captured.status, 0, captured.stderr);
+    const result = JSON.parse(captured.stdout);
+    assert.equal(result.checkpoint.kind, "backfill");
+    assert.equal(result.checkpoint.source.agent, "manual");
+    assert.deepEqual(result.checkpoint.work_period, {
+      start: "2026-07-06",
+      end: "2026-07-08",
+      precision: "range",
+      basis: ["user"],
+      timezone: "Asia/Seoul",
+    });
+    assert.equal(
+      result.paths.checkpoint,
+      path.join("records", "2026", "07", "13", "CP-20260713-DOC7.json"),
+    );
+
+    const validation = run(["validate", "--root", root, "--json"]);
+    assert.equal(validation.status, 0, validation.stderr);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

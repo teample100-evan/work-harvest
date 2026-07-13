@@ -1,6 +1,6 @@
 ---
 name: record-work
-description: Record work performed in the current Codex task into the local Work Harvest as a dated checkpoint and refresh its handoff context. Use when the user says to record today's work, record up to the current point, save progress since the last checkpoint, prepare or update a handoff for a new session, finalize a completed work item, backfill missed work, or correct an earlier work record. Trigger on Korean requests such as "오늘 작업은 여기까지 기록해줘", "현재 단계까지 기록해줘", "지난 체크포인트 이후 작업을 기록해줘", "새 세션용 인수인계를 갱신해줘", and "업무 완료 기록을 작성해줘".
+description: Record live or retrospectively described work into the local Work Harvest as a dated checkpoint and refresh its handoff context. Use for code, documentation, planning, research, communication, operations, or other reportable work when the user asks to record today's work, save progress, record work performed outside the current Codex task, prepare a handoff, finalize a work item, backfill missed work, or correct an earlier record. Trigger on Korean requests such as "오늘 작업은 여기까지 기록해줘", "현재 단계까지 기록해줘", "지난주에 한 작업을 기록해줘", "이 문서 작업을 기록해줘", "새 세션용 인수인계를 갱신해줘", and "업무 완료 기록을 작성해줘".
 ---
 
 # Record Work
@@ -32,6 +32,18 @@ Map the request to one checkpoint kind:
 
 An explicit handoff request still creates a checkpoint, then refreshes context. Do not update context without preserving the delta that led to it.
 
+Classify the recording situation before gathering evidence:
+
+| Situation | Kind | Source and evidence handling |
+| --- | --- | --- |
+| Work performed in this Codex task | `progress` or `final` | Use current task, repository, commands, and artifacts as direct evidence |
+| Documentation or other non-code work in this task | `progress` or `final` | Use documents, URLs, decisions, reviews, or delivered artifacts; Git is optional |
+| Work described after it happened | `backfill` | Use `source.agent: manual`, preserve the real work period, and identify user-reported claims |
+| Existing document or external record imported as work history | `backfill` | Reference the document or URL and do not claim independent verification |
+| Prior checkpoint contains a factual error | `correction` | Point `correction_of` to the immutable prior checkpoint |
+
+Do not add a new schema field to represent these situations. Express them with `kind`, `source`, `work_period`, evidence, and precise wording.
+
 ### 2. Find the work item before creating one
 
 Run:
@@ -40,7 +52,7 @@ Run:
 <skill-dir>/scripts/wh work-item list --json
 ```
 
-Match candidates using project, repository, issue or PR, objective, initiative, branch, and current state. Then inspect the best candidate:
+Match candidates using project, objective, intended outcome, initiative, repository, issue or PR, and current state. Treat a branch or session as supporting context, not as the work item identity. Then inspect the best candidate:
 
 ```bash
 <skill-dir>/scripts/wh work-item show <id> --json
@@ -50,6 +62,10 @@ Match candidates using project, repository, issue or PR, objective, initiative, 
 - If multiple candidates are materially plausible, ask the user to select one.
 - Create a new work item only when no existing item represents the same reportable objective.
 - Prefer an existing external issue ID. Otherwise use `WH-YYYYMMDD-<short-slug>`.
+- Reuse one work item across branches or sessions when they pursue the same reportable outcome.
+- Split work performed in one branch or session when it produces materially separate reportable outcomes.
+- Permit empty `repositories` for documentation, planning, communication, research, and operations work.
+- Use only the exact `work_types` values: `planning`, `design`, `implementation`, `bugfix`, `refactoring`, `testing`, `documentation`, `operation`, `communication`, `research`, or `other`. Use singular `operation`, never `operations`.
 
 Read [references/payloads.md](references/payloads.md) before creating a work item or checkpoint payload.
 
@@ -76,6 +92,17 @@ Use the current conversation and safe read-only repository checks to confirm:
 - Blockers, remaining risk, and next steps
 
 Treat code and current Git state as stronger evidence than remembered conversation context. Do not claim an unexecuted verification passed. Do not copy full transcripts, full diffs, secrets, environment variables, or sensitive command output into the record.
+
+For retrospectively described work:
+
+- Treat the user's statement as a valid record source, but not as independent verification.
+- Use `work_period.basis: [user]` unless stronger date evidence is available.
+- Keep `captured_at` as the current recording time; never disguise it as the work time.
+- Write user-reported outcomes as user-reported in `impact` or the description.
+- Leave verification as `not_run`, omit it, or state a follow-up when Codex did not verify it.
+- Use `precision: range` or `unknown` when exact dates cannot be reconstructed.
+
+For non-code work, look for deliverables such as documents, decisions, meeting notes, review comments, dashboards, messages, and URLs. Do not require a branch, commit, or changed source file.
 
 ### 5. Prepare the payload
 
@@ -119,5 +146,8 @@ Do not turn the confirmation into a weekly report.
 - Do not create an empty checkpoint when nothing changed since the last checkpoint.
 - Do not merge separate reportable outcomes just because they occurred in one Codex task.
 - Do not split one outcome into a new work item just because the session or date changed.
+- Do not use a branch name as the sole reason to merge or split work items.
+- Do not reject non-code work because no repository or Git evidence exists.
+- Do not present user-reported work as independently verified.
 - Do not guess a session reference. Store `null` when Codex does not expose one reliably.
 - Ask one concise question only when the work item or completion status cannot be resolved safely from local evidence.

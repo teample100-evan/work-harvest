@@ -4,6 +4,8 @@
 
 Use only after `work-item list` confirms no existing match.
 
+Use exact schema values for `classification.work_types`: `planning`, `design`, `implementation`, `bugfix`, `refactoring`, `testing`, `documentation`, `operation`, `communication`, `research`, or `other`. In particular, use singular `operation`, not `operations`.
+
 ```yaml
 id: WH-20260713-auth-tests
 project_id: jajak-front
@@ -154,7 +156,56 @@ context_update:
 
 ## Backfill and correction
 
-For backfill, set `kind: backfill` and give `captured_at`, `work_period.precision`, and `work_period.basis` honestly.
+For backfill, set `kind: backfill` and give `work_period.precision` and `work_period.basis` honestly. Omit `captured_at` to use the current recording time unless an exact capture timestamp is explicitly required.
+
+Example for work described in a later recording-only task:
+
+```yaml
+work_item_id: WH-20260713-release-guide
+kind: backfill
+source:
+  agent: manual
+  surface: desktop
+  session_ref: null
+  task_title: 지난주 배포 가이드 작성 기록
+work_period:
+  start: 2026-07-06
+  end: 2026-07-10
+  precision: range
+  basis:
+    - user
+  timezone: Asia/Seoul
+title: 배포 가이드 초안 작성
+summary: 사용자가 전달한 내용에 따르면 지난주에 신규 배포 가이드 초안을 작성했다.
+activities:
+  - 배포 전 점검 절차와 장애 복구 순서를 문서화했다.
+verifications:
+  - type: review
+    description: 배포 가이드 내용 검토
+    status: not_run
+    command: null
+    evidence_refs: []
+outcomes:
+  - description: 배포 가이드 초안이 작성됐다고 사용자가 보고했다.
+    impact: 사용자 제공 설명 기준이며 Codex가 문서를 직접 확인하지 않았다.
+    evidence_refs: []
+next_steps:
+  - 배포 가이드 문서 링크를 연결하고 내용을 검토한다.
+evidence:
+  urls: []
+context_update:
+  current_state: 배포 가이드 초안 작성 사실을 사후 기록했으며 문서 확인이 남아 있다.
+  verification:
+    completed: []
+    pending:
+      - 배포 가이드 문서 확인
+  next_steps:
+    - 문서 링크 연결 및 내용 검토
+  risks:
+    - 현재 기록은 사용자 설명에 기반하며 문서가 독립적으로 확인되지 않았다.
+```
+
+Documentation or non-code work performed in the current task is not a backfill merely because it has no Git change. Use `progress` or `final`, select the appropriate work types, and cite documents, URLs, decisions, or reviews when available.
 
 For correction, set:
 

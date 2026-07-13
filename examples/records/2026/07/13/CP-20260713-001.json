@@ -1,0 +1,74 @@
+{
+  "schema_version": "1.0",
+  "id": "CP-20260713-001",
+  "work_item_id": "AUTH-142",
+  "project_id": "jajak-front",
+  "kind": "progress",
+  "source": {
+    "agent": "codex",
+    "surface": "desktop",
+    "session_ref": null,
+    "task_title": "인증 테스트 코드 작성"
+  },
+  "captured_at": "2026-07-13T18:10:00+09:00",
+  "work_period": {
+    "start": "2026-07-13",
+    "end": "2026-07-13",
+    "precision": "day",
+    "basis": ["checkpoint", "git"],
+    "timezone": "Asia/Seoul"
+  },
+  "title": "인증 갱신 기본 테스트 작성",
+  "summary": "refresh token 갱신과 요청 재시도의 기본 성공 경로를 테스트로 검증했다.",
+  "status_after": "in_progress",
+  "activities": [
+    "refresh token 갱신 성공 테스트를 추가했다.",
+    "갱신 이후 원 요청이 한 번만 재시도되는지 확인했다."
+  ],
+  "decisions": [
+    {
+      "summary": "원 요청 재시도를 한 번으로 제한한다.",
+      "rationale": "refresh token 만료 시 무한 재시도를 방지하기 위해서다.",
+      "status": "accepted"
+    }
+  ],
+  "verifications": [
+    {
+      "type": "test",
+      "description": "인증 갱신 기본 성공 경로 테스트",
+      "status": "passed",
+      "command": "pnpm test auth",
+      "evidence_refs": ["tests/auth/refresh-token.test.ts"]
+    }
+  ],
+  "outcomes": [
+    {
+      "description": "토큰 갱신 후 요청이 정상적으로 재시도되는 기본 동작을 검증했다.",
+      "impact": null,
+      "evidence_refs": ["tests/auth/refresh-token.test.ts"]
+    }
+  ],
+  "blockers": [],
+  "next_steps": [
+    "동시에 여러 요청이 401을 반환하는 경우를 테스트한다.",
+    "refresh token 만료 응답을 확인한다."
+  ],
+  "evidence": {
+    "commits": ["abc1234"],
+    "pull_requests": [],
+    "issues": ["AUTH-142"],
+    "files": ["tests/auth/refresh-token.test.ts"],
+    "commands": ["pnpm test auth"],
+    "urls": []
+  },
+  "git": {
+    "repository": "jajak-front",
+    "branch": "feat/auth-refresh",
+    "head_before": "def5678",
+    "head_after": "abc1234",
+    "dirty": false
+  },
+  "related_checkpoint_ids": [],
+  "correction_of": null,
+  "confidentiality": "normal"
+}

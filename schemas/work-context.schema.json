@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://work-harness.local/schemas/work-context.schema.json",
+  "title": "Work Harness Work Context",
+  "description": "새 세션 인수인계를 위한 업무 항목의 현재 상태",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "work_item_id",
+    "project_id",
+    "updated_at",
+    "last_checkpoint_id",
+    "last_verified_git_ref",
+    "current_state",
+    "decisions",
+    "files",
+    "verification",
+    "next_steps",
+    "risks",
+    "git"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "work_item_id": { "$ref": "./common.schema.json#/$defs/identifier" },
+    "project_id": { "$ref": "./common.schema.json#/$defs/identifier" },
+    "updated_at": { "$ref": "./common.schema.json#/$defs/timestamp" },
+    "last_checkpoint_id": {
+      "oneOf": [
+        { "$ref": "./common.schema.json#/$defs/identifier" },
+        { "type": "null" }
+      ]
+    },
+    "last_verified_git_ref": { "type": ["string", "null"] },
+    "current_state": { "$ref": "./common.schema.json#/$defs/nonEmptyString" },
+    "decisions": {
+      "type": "array",
+      "items": { "$ref": "./common.schema.json#/$defs/nonEmptyString" }
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "description"],
+        "properties": {
+          "path": { "$ref": "./common.schema.json#/$defs/nonEmptyString" },
+          "description": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["completed", "pending"],
+      "properties": {
+        "completed": {
+          "type": "array",
+          "items": { "$ref": "./common.schema.json#/$defs/nonEmptyString" }
+        },
+        "pending": {
+          "type": "array",
+          "items": { "$ref": "./common.schema.json#/$defs/nonEmptyString" }
+        }
+      }
+    },
+    "next_steps": {
+      "type": "array",
+      "items": { "$ref": "./common.schema.json#/$defs/nonEmptyString" }
+    },
+    "risks": {
+      "type": "array",
+      "items": { "$ref": "./common.schema.json#/$defs/nonEmptyString" }
+    },
+    "git": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "branch", "commit", "checked_at"],
+      "properties": {
+        "repository": { "type": ["string", "null"] },
+        "branch": { "type": ["string", "null"] },
+        "commit": { "type": ["string", "null"] },
+        "checked_at": {
+          "oneOf": [
+            { "$ref": "./common.schema.json#/$defs/timestamp" },
+            { "type": "null" }
+          ]
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "schema_version": "1.0",
+  "work_item_id": "AUTH-142",
+  "project_id": "jajak-front",
+  "updated_at": "2026-07-13T18:10:00+09:00",
+  "last_checkpoint_id": "CP-20260713-001",
+  "last_verified_git_ref": "abc1234",
+  "current_state": "refresh token 서비스와 interceptor 연동을 완료했다. 동시 요청 테스트를 작성하는 중이다.",
+  "decisions": [
+    "동시에 발생한 갱신 요청은 하나의 Promise를 공유한다. 중복 refresh 요청을 막기 위해서다.",
+    "원 요청 재시도는 한 번만 허용한다. 무한 재시도를 방지하기 위해서다."
+  ],
+  "files": [
+    {
+      "path": "src/auth/refresh-token.ts",
+      "description": "refresh 요청과 동시성 제어"
+    },
+    {
+      "path": "src/api/interceptor.ts",
+      "description": "인증 실패 감지와 요청 재시도"
+    },
+    {
+      "path": "tests/auth/refresh-token.test.ts",
+      "description": "인증 갱신 테스트"
+    }
+  ],
+  "verification": {
+    "completed": ["기본 갱신 성공 테스트"],
+    "pending": ["동시 요청 테스트", "refresh token 만료 테스트"]
+  },
+  "next_steps": [
+    "동시 401 응답 테스트 작성",
+    "refresh token 만료 UX 확인",
+    "전체 인증 테스트 실행"
+  ],
+  "risks": ["운영 API의 refresh token 만료 응답 규격을 확인해야 한다."],
+  "git": {
+    "repository": "jajak-front",
+    "branch": "feat/auth-refresh",
+    "commit": "abc1234",
+    "checked_at": "2026-07-13T18:10:00+09:00"
+  }
+}

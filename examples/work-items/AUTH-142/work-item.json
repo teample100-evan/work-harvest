@@ -1,0 +1,37 @@
+{
+  "schema_version": "1.0",
+  "id": "AUTH-142",
+  "project_id": "jajak-front",
+  "title": "인증 시스템 개선",
+  "status": "in_progress",
+  "objective": "토큰 만료 시 자동으로 갱신하고 실패한 요청을 안전하게 재시도한다.",
+  "desired_outcomes": [
+    "동시 인증 실패 상황에서도 refresh 요청이 한 번만 발생한다.",
+    "토큰 갱신과 재시도 동작이 자동화된 테스트로 검증된다."
+  ],
+  "classification": {
+    "initiative_id": "authentication",
+    "work_types": ["implementation", "testing"],
+    "tags": ["auth", "refresh-token"]
+  },
+  "repositories": [
+    {
+      "name": "jajak-front",
+      "path": "/workspace/jajak-front",
+      "remote_url": null,
+      "default_branch": "main"
+    }
+  ],
+  "links": [
+    {
+      "type": "issue",
+      "label": "AUTH-142",
+      "external_id": "AUTH-142",
+      "url": null
+    }
+  ],
+  "context_path": "work-items/AUTH-142/context.md",
+  "created_at": "2026-07-10T09:00:00+09:00",
+  "updated_at": "2026-07-13T18:10:00+09:00",
+  "completed_at": null
+}

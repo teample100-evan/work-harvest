@@ -1,0 +1,24 @@
+{
+  "name": "work-harness",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Agent-neutral local work records and reporting harness",
+  "type": "module",
+  "bin": {
+    "wh": "./bin/wh.js"
+  },
+  "scripts": {
+    "wh": "node ./bin/wh.js",
+    "test": "node --test",
+    "validate:examples": "node ./bin/wh.js validate --include-examples",
+    "check": "node --check ./bin/wh.js && node --check ./src/cli.js && node --test && node ./bin/wh.js validate --include-examples"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "dependencies": {
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
+    "yaml": "^2.9.0"
+  }
+}

@@ -1,0 +1,156 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://work-harness.local/schemas/work-item.schema.json",
+  "title": "Work Harness Work Item",
+  "description": "세션과 날짜를 넘어 유지되는 기능 또는 보고 가능한 업무 단위",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "id",
+    "project_id",
+    "title",
+    "status",
+    "objective",
+    "desired_outcomes",
+    "classification",
+    "repositories",
+    "links",
+    "context_path",
+    "created_at",
+    "updated_at",
+    "completed_at"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "id": {
+      "$ref": "./common.schema.json#/$defs/identifier"
+    },
+    "project_id": {
+      "$ref": "./common.schema.json#/$defs/identifier"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160
+    },
+    "status": {
+      "type": "string",
+      "enum": ["planned", "in_progress", "blocked", "completed", "cancelled"]
+    },
+    "objective": {
+      "$ref": "./common.schema.json#/$defs/nonEmptyString"
+    },
+    "desired_outcomes": {
+      "type": "array",
+      "items": {
+        "$ref": "./common.schema.json#/$defs/nonEmptyString"
+      }
+    },
+    "classification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["initiative_id", "work_types", "tags"],
+      "properties": {
+        "initiative_id": {
+          "oneOf": [
+            {
+              "$ref": "./common.schema.json#/$defs/identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "work_types": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "planning",
+              "design",
+              "implementation",
+              "bugfix",
+              "refactoring",
+              "testing",
+              "documentation",
+              "operation",
+              "communication",
+              "research",
+              "other"
+            ]
+          }
+        },
+        "tags": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        }
+      }
+    },
+    "repositories": {
+      "type": "array",
+      "items": {
+        "$ref": "./common.schema.json#/$defs/repository"
+      }
+    },
+    "links": {
+      "type": "array",
+      "items": {
+        "$ref": "./common.schema.json#/$defs/externalLink"
+      }
+    },
+    "context_path": {
+      "type": "string",
+      "pattern": "^work-items/.+/context\\.md$"
+    },
+    "created_at": {
+      "$ref": "./common.schema.json#/$defs/timestamp"
+    },
+    "updated_at": {
+      "$ref": "./common.schema.json#/$defs/timestamp"
+    },
+    "completed_at": {
+      "oneOf": [
+        {
+          "$ref": "./common.schema.json#/$defs/timestamp"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "completed"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "completed_at": {
+            "$ref": "./common.schema.json#/$defs/timestamp"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "completed_at": {
+            "type": "null"
+          }
+        }
+      }
+    }
+  ]
+}

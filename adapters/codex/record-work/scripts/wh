@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+skill_dir="$(cd "$(dirname "$0")/.." && pwd -P)"
+source_checkout="$(cd "$skill_dir/../../.." && pwd)"
+
+if [[ -n "${WORK_HARNESS_CLI_HOME:-}" ]]; then
+  harness_root="$WORK_HARNESS_CLI_HOME"
+elif [[ -f "$source_checkout/package.json" && -f "$source_checkout/bin/wh.js" ]]; then
+  harness_root="$source_checkout"
+else
+  harness_root=""
+fi
+
+if [[ ! -f "$harness_root/package.json" || ! -f "$harness_root/bin/wh.js" ]]; then
+  echo "Work Harness CLI not found. Set WORK_HARNESS_CLI_HOME to its checkout." >&2
+  exit 1
+fi
+
+exec pnpm --dir "$harness_root" wh "$@"

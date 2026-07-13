@@ -1,0 +1,4 @@
+interface:
+  display_name: "Record Work"
+  short_description: "Codex 세션 작업을 업무 항목과 체크포인트로 안전하게 기록"
+  default_prompt: "$record-work를 사용해 오늘 작업을 기록하고 인수인계 context를 갱신해줘."

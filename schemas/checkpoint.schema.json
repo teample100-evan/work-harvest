@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://work-harness.local/schemas/checkpoint.schema.json",
-  "title": "Work Harness Checkpoint",
+  "$id": "https://work-harvest.local/schemas/checkpoint.schema.json",
+  "title": "Work Harvest Checkpoint",
   "description": "마지막 체크포인트 이후의 작업 진행을 보존하는 append-only 기록",
   "type": "object",
   "additionalProperties": false,

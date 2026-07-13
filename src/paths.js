@@ -7,7 +7,7 @@ export const packageRoot = path.resolve(
 );
 
 export function resolveDataRoot(value) {
-  return path.resolve(value ?? process.env.WORK_HARNESS_HOME ?? process.cwd());
+  return path.resolve(value ?? process.env.WORK_HARVEST_HOME ?? process.cwd());
 }
 
 export function resolveWithinRoot(root, relativePath) {

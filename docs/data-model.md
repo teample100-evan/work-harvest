@@ -1,4 +1,4 @@
-# Work Harness 데이터 모델
+# Work Harvest 데이터 모델
 
 이 문서는 [작업 방법론](./work-method.md)을 구현하기 위한 버전 1.0 데이터 계약을 설명한다.
 

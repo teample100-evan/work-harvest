@@ -1,21 +1,21 @@
 ---
 name: record-work
-description: Record work performed in the current Codex task into the local Work Harness as a dated checkpoint and refresh its handoff context. Use when the user says to record today's work, record up to the current point, save progress since the last checkpoint, prepare or update a handoff for a new session, finalize a completed work item, backfill missed work, or correct an earlier work record. Trigger on Korean requests such as "오늘 작업은 여기까지 기록해줘", "현재 단계까지 기록해줘", "지난 체크포인트 이후 작업을 기록해줘", "새 세션용 인수인계를 갱신해줘", and "업무 완료 기록을 작성해줘".
+description: Record work performed in the current Codex task into the local Work Harvest as a dated checkpoint and refresh its handoff context. Use when the user says to record today's work, record up to the current point, save progress since the last checkpoint, prepare or update a handoff for a new session, finalize a completed work item, backfill missed work, or correct an earlier work record. Trigger on Korean requests such as "오늘 작업은 여기까지 기록해줘", "현재 단계까지 기록해줘", "지난 체크포인트 이후 작업을 기록해줘", "새 세션용 인수인계를 갱신해줘", and "업무 완료 기록을 작성해줘".
 ---
 
 # Record Work
 
-Persist a concise, evidence-backed delta from the current task into Work Harness. Keep the source JSON valid and let the CLI render the human-readable Markdown.
+Persist a concise, evidence-backed delta from the current task into Work Harvest. Keep the source JSON valid and let the CLI render the human-readable Markdown.
 
 ## CLI
 
-Run every Work Harness command through:
+Run every Work Harvest command through:
 
 ```bash
 <skill-dir>/scripts/wh <command>
 ```
 
-The wrapper resolves its CLI checkout from `WORK_HARNESS_CLI_HOME` or the Skill's source checkout. The CLI resolves the data store from `WORK_HARNESS_HOME` or `--root`. Stop and report the missing configuration if the wrapper cannot locate Work Harness.
+The wrapper resolves its CLI checkout from `WORK_HARVEST_CLI_HOME` or the Skill's source checkout. The CLI resolves the data store from `WORK_HARVEST_HOME` or `--root`. Stop and report the missing configuration if the wrapper cannot locate Work Harvest.
 
 ## Workflow
 

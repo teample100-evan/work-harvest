@@ -96,7 +96,7 @@ function checkpointPayload(kind = "progress") {
 }
 
 test("work item creation, checkpoint capture, and validation form one flow", () => {
-  const root = mkdtempSync(path.join(os.tmpdir(), "work-harness-test-"));
+  const root = mkdtempSync(path.join(os.tmpdir(), "work-harvest-test-"));
   try {
     const created = run(
       ["work-item", "create", "--input", "-", "--root", root, "--json"],
@@ -186,7 +186,7 @@ test("work item creation, checkpoint capture, and validation form one flow", () 
 });
 
 test("invalid empty checkpoint is rejected without writing a record", () => {
-  const root = mkdtempSync(path.join(os.tmpdir(), "work-harness-test-"));
+  const root = mkdtempSync(path.join(os.tmpdir(), "work-harvest-test-"));
   try {
     const created = run(
       ["work-item", "create", "--input", "-", "--root", root],
@@ -214,7 +214,7 @@ test("invalid empty checkpoint is rejected without writing a record", () => {
 });
 
 test("final checkpoint completes the work item and updates context metadata", () => {
-  const root = mkdtempSync(path.join(os.tmpdir(), "work-harness-test-"));
+  const root = mkdtempSync(path.join(os.tmpdir(), "work-harvest-test-"));
   try {
     const created = run(
       ["work-item", "create", "--input", "-", "--root", root],

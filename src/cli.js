@@ -13,7 +13,7 @@ import { createSchemaValidators } from "./schema-validator.js";
 import { validateDataRoot } from "./validate-data.js";
 import { createWorkItem } from "./work-items.js";
 
-const usage = `Work Harness CLI
+const usage = `Work Harvest CLI
 
 Usage:
   wh work-item create --input <file|-> [--root <path>] [--json]
@@ -24,7 +24,7 @@ Usage:
   wh validate [--root <path>] [--include-examples] [--json]
 
 Environment:
-  WORK_HARNESS_HOME  Default data root when --root is omitted
+  WORK_HARVEST_HOME  Default data root when --root is omitted
 `;
 
 function parseCommandOptions(

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://work-harness.local/schemas/work-context.schema.json",
-  "title": "Work Harness Work Context",
+  "$id": "https://work-harvest.local/schemas/work-context.schema.json",
+  "title": "Work Harvest Work Context",
   "description": "새 세션 인수인계를 위한 업무 항목의 현재 상태",
   "type": "object",
   "additionalProperties": false,

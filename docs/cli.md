@@ -1,4 +1,4 @@
-# Work Harness CLI
+# Work Harvest CLI
 
 ## 실행 방식
 
@@ -13,10 +13,10 @@ pnpm wh <command>
 데이터 저장 위치는 다음 우선순위로 결정한다.
 
 1. `--root <path>`
-2. `WORK_HARNESS_HOME`
+2. `WORK_HARVEST_HOME`
 3. 현재 작업 디렉터리
 
-`WORK_HARNESS_CLI_HOME`은 Codex Skill 래퍼가 CLI 코드의 checkout을 찾는 용도다. 기록 데이터 위치를 정하는 `WORK_HARNESS_HOME`과 구분한다.
+`WORK_HARVEST_CLI_HOME`은 Codex Skill 래퍼가 CLI 코드의 checkout을 찾는 용도다. 기록 데이터 위치를 정하는 `WORK_HARVEST_HOME`과 구분한다.
 
 ## 공통 입력
 

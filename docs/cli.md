@@ -171,6 +171,22 @@ pnpm wh checkpoint last --work-item <id> [--root <path>] [--json]
 
 지정 업무 항목의 가장 최근 체크포인트를 반환한다. 에이전트는 이를 이용해 “지난 체크포인트 이후”의 기록 범위를 정한다.
 
+## `report performance-note`
+
+```bash
+pnpm wh report performance-note --work-item <id> [--output <path>] [--root <path>] [--json]
+```
+
+업무 항목의 메타데이터·현재 context·연결된 체크포인트를 합쳐 성과 노트 Markdown 초안을 만든다. 기본 경로는 다음과 같다.
+
+```text
+reports/performance-notes/<work_item_id>-<마지막_작업일>.md
+```
+
+`--output`은 데이터 저장소 내부의 `.md` 경로만 허용한다. 기존 파일을 덮어쓰지 않으므로, 이미 작성한 노트를 보호하면서 별도의 초안을 만들 수 있다.
+
+생성 문서는 [`templates/performance-note.md`](../templates/performance-note.md)의 공통 구성에 맞춘다. 체크포인트에서 확인할 수 있는 활동·결정·검증·결과·근거는 자동으로 채우고, 근거가 없는 수치나 배포 결과는 `미확인`으로 표시한다. 필요한 경우 사용자가 섹션을 삭제·확장해 완성한다.
+
 ## `validate`
 
 ```bash

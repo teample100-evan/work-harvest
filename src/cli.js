@@ -9,6 +9,7 @@ import {
   listWorkItems,
   showWorkItem,
 } from "./queries.js";
+import { createPerformanceNote } from "./reports.js";
 import { createSchemaValidators } from "./schema-validator.js";
 import { validateDataRoot } from "./validate-data.js";
 import { createWorkItem } from "./work-items.js";
@@ -21,6 +22,7 @@ Usage:
   wh work-item show <id> [--root <path>] [--json]
   wh checkpoint capture --input <file|-> [--root <path>] [--json]
   wh checkpoint last --work-item <id> [--root <path>] [--json]
+  wh report performance-note --work-item <id> [--output <path>] [--root <path>] [--json]
   wh validate [--root <path>] [--include-examples] [--json]
 
 Environment:
@@ -234,6 +236,36 @@ async function handleLastCheckpoint(args, validators) {
   );
 }
 
+async function handleCreatePerformanceNote(args, validators) {
+  const { values: options } = parseCommandOptions(args, {
+    extra: {
+      "work-item": { type: "string" },
+      output: { type: "string" },
+    },
+  });
+  if (options.help) {
+    process.stdout.write(usage);
+    return;
+  }
+  if (!options["work-item"]) {
+    throw new CliError(
+      "report performance-note requires --work-item <id>",
+      { exitCode: 2 },
+    );
+  }
+  const result = await createPerformanceNote({
+    root: resolveDataRoot(options.root),
+    validators,
+    workItemId: options["work-item"],
+    output: options.output,
+  });
+  printResult(
+    result,
+    options.json,
+    `Created performance note for ${result.work_item.id}\n  checkpoints: ${result.checkpoint_count}\n  report: ${result.paths.report}`,
+  );
+}
+
 export async function runCli(args) {
   const asJson = args.includes("--json");
   try {
@@ -265,6 +297,10 @@ export async function runCli(args) {
     }
     if (args[0] === "checkpoint" && args[1] === "last") {
       await handleLastCheckpoint(args.slice(2), validators);
+      return;
+    }
+    if (args[0] === "report" && args[1] === "performance-note") {
+      await handleCreatePerformanceNote(args.slice(2), validators);
       return;
     }
 

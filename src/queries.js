@@ -28,16 +28,30 @@ async function loadCheckpoints(root, validators) {
   return checkpoints;
 }
 
-export async function findLastCheckpoint({ root, validators, workItemId }) {
+export async function listCheckpointsForWorkItem({
+  root,
+  validators,
+  workItemId,
+}) {
   await loadWorkItem(root, workItemId);
-  const checkpoints = (await loadCheckpoints(root, validators))
+  return (await loadCheckpoints(root, validators))
     .filter((entry) => entry.checkpoint.work_item_id === workItemId)
     .sort((left, right) => {
-      const byTime = right.checkpoint.captured_at.localeCompare(
-        left.checkpoint.captured_at,
+      const byTime = left.checkpoint.captured_at.localeCompare(
+        right.checkpoint.captured_at,
       );
-      return byTime || right.checkpoint.id.localeCompare(left.checkpoint.id);
+      return byTime || left.checkpoint.id.localeCompare(right.checkpoint.id);
     });
+}
+
+export async function findLastCheckpoint({ root, validators, workItemId }) {
+  await loadWorkItem(root, workItemId);
+  const checkpoints = await listCheckpointsForWorkItem({
+    root,
+    validators,
+    workItemId,
+  });
+  checkpoints.reverse();
   return checkpoints[0] ?? null;
 }
 

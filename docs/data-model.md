@@ -11,7 +11,8 @@
 | `work-items/<id>/context.md` | 재생성 가능 | 사람이 읽는 인수인계 문서 |
 | 체크포인트 | append-only | 특정 구간의 작업 이력과 근거 |
 | 자동 활동 이벤트 | append-only | 날짜와 실행 근거 보조 |
-| 보고서 | 재생성 가능 | 기간별 업무 항목 집계 |
+| 성과 노트 | 생성 후 수동 편집 가능 | 하나의 업무 항목과 체크포인트를 성과 템플릿으로 정리 |
+| 기간 보고서 | 재생성 가능 | 기간별 업무 항목 집계 |
 
 ## 스키마
 
@@ -52,6 +53,9 @@ records/YYYY/MM/DD/<checkpoint_id>.md
 
 - [`templates/work-item-context.md`](../templates/work-item-context.md): 현재 업무 상태와 인수인계
 - [`templates/checkpoint.md`](../templates/checkpoint.md): 사람이 읽는 체크포인트 기록
+- [`templates/performance-note.md`](../templates/performance-note.md): 성과 노트 공통 템플릿
+
+성과 노트는 `reports/performance-notes/` 아래 Markdown으로 생성한다. 이 문서는 체크포인트 원본을 보존하는 파생 초안이지만, 사용자가 정량 수치·배포 정보·공유 문구를 보완하는 최종 문서이므로 생성 뒤 수동 편집을 허용한다. 근거가 없는 내용은 자동으로 추측하지 않고 `미확인`으로 남긴다.
 
 템플릿의 안내 문구는 실제 파일 생성 시 제거해야 한다. 빈 항목은 스키마에 맞는 빈 배열이나 `null`로 정규화한다.
 

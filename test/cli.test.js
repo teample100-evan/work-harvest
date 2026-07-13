@@ -171,6 +171,41 @@ test("work item creation, checkpoint capture, and validation form one flow", () 
       "CP-20260713-001",
     );
 
+    const report = run([
+      "report",
+      "performance-note",
+      "--work-item",
+      "AUTH-142",
+      "--root",
+      root,
+      "--json",
+    ]);
+    assert.equal(report.status, 0, report.stderr);
+    const reportResult = JSON.parse(report.stdout);
+    assert.equal(reportResult.checkpoint_count, 1);
+    assert.equal(
+      reportResult.paths.report,
+      path.join("reports", "performance-notes", "AUTH-142-20260713.md"),
+    );
+    const reportMarkdown = readFileSync(
+      path.join(root, reportResult.paths.report),
+      "utf8",
+    );
+    assert.match(reportMarkdown, /# 1\. 작업 개요/);
+    assert.match(reportMarkdown, /# 13\. 업무 요약/);
+    assert.match(reportMarkdown, /인증 테스트 \(passed\)/);
+
+    const duplicateReport = run([
+      "report",
+      "performance-note",
+      "--work-item",
+      "AUTH-142",
+      "--root",
+      root,
+    ]);
+    assert.notEqual(duplicateReport.status, 0);
+    assert.match(duplicateReport.stderr, /already exists/);
+
     const validation = run(["validate", "--root", root, "--json"]);
     assert.equal(validation.status, 0, validation.stderr);
     const validationResult = JSON.parse(validation.stdout);

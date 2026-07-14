@@ -3,9 +3,10 @@ use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, State};
+use tauri_plugin_opener::OpenerExt;
 use work_harvest_core::{
-    DataRootSnapshot, WorkItemDetail, get_work_item_detail as get_detail,
-    inspect_data_root as inspect_root,
+    DataRootSnapshot, WorkItemDetail, checkpoint_markdown_path, context_markdown_path,
+    get_work_item_detail as get_detail, inspect_data_root as inspect_root, work_item_directory,
 };
 
 #[derive(Default)]
@@ -21,6 +22,15 @@ struct DataRootChange {
 
 fn lock_error(label: &str) -> String {
     format!("Could not lock desktop {label} state")
+}
+
+fn selected_root(state: &State<'_, DesktopState>) -> Result<PathBuf, String> {
+    state
+        .root
+        .lock()
+        .map_err(|_| lock_error("root"))?
+        .clone()
+        .ok_or_else(|| "Choose a Work Harvest data root first".to_string())
 }
 
 fn start_watcher(app: &AppHandle, root: &Path) -> Result<RecommendedWatcher, String> {
@@ -73,12 +83,7 @@ fn set_data_root(
 
 #[tauri::command]
 fn inspect_data_root(state: State<'_, DesktopState>) -> Result<DataRootSnapshot, String> {
-    let root = state
-        .root
-        .lock()
-        .map_err(|_| lock_error("root"))?
-        .clone()
-        .ok_or_else(|| "Choose a Work Harvest data root first".to_string())?;
+    let root = selected_root(&state)?;
     inspect_root(root).map_err(|error| error.to_string())
 }
 
@@ -87,24 +92,62 @@ fn get_work_item_detail(
     state: State<'_, DesktopState>,
     work_item_id: String,
 ) -> Result<WorkItemDetail, String> {
-    let root = state
-        .root
-        .lock()
-        .map_err(|_| lock_error("root"))?
-        .clone()
-        .ok_or_else(|| "Choose a Work Harvest data root first".to_string())?;
+    let root = selected_root(&state)?;
     get_detail(root, &work_item_id).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn reveal_work_item(
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+    work_item_id: String,
+) -> Result<(), String> {
+    let path = work_item_directory(selected_root(&state)?, &work_item_id)
+        .map_err(|error| error.to_string())?;
+    app.opener()
+        .reveal_item_in_dir(path)
+        .map_err(|error| format!("Could not reveal work item in Finder: {error}"))
+}
+
+#[tauri::command]
+fn open_context_markdown(
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+    work_item_id: String,
+) -> Result<(), String> {
+    let path = context_markdown_path(selected_root(&state)?, &work_item_id)
+        .map_err(|error| error.to_string())?;
+    app.opener()
+        .open_path(path.to_string_lossy().into_owned(), None::<String>)
+        .map_err(|error| format!("Could not open context Markdown: {error}"))
+}
+
+#[tauri::command]
+fn open_checkpoint_markdown(
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+    checkpoint_id: String,
+) -> Result<(), String> {
+    let path = checkpoint_markdown_path(selected_root(&state)?, &checkpoint_id)
+        .map_err(|error| error.to_string())?;
+    app.opener()
+        .open_path(path.to_string_lossy().into_owned(), None::<String>)
+        .map_err(|error| format!("Could not open checkpoint Markdown: {error}"))
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .manage(DesktopState::default())
         .invoke_handler(tauri::generate_handler![
             set_data_root,
             inspect_data_root,
-            get_work_item_detail
+            get_work_item_detail,
+            reveal_work_item,
+            open_context_markdown,
+            open_checkpoint_markdown
         ])
         .setup(|app| {
             let window = app

@@ -4,15 +4,52 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   getWorkItemDetail,
   inspectDataRoot,
+  openCheckpointMarkdown,
+  openContextMarkdown,
+  revealWorkItem,
   setDataRoot,
   type DataRootSnapshot,
   type WorkItemDetail,
 } from "./desktop";
+import { CheckpointDetails } from "./CheckpointDetails";
 
 const DATA_ROOT_KEY = "work-harvest:data-root";
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
+}
+
+function friendlyError(error: unknown) {
+  const message = errorMessage(error);
+  if (/permission denied|operation not permitted/i.test(message)) {
+    return "폴더 또는 파일 접근 권한이 없습니다. Finder에서 권한을 확인하거나 데이터 폴더를 다시 선택하세요.";
+  }
+  if (/not found|does not exist/i.test(message)) {
+    return "연결된 파일을 찾을 수 없습니다. 외부에서 이동하거나 삭제했는지 확인한 뒤 다시 검사하세요.";
+  }
+  if (/could not open|could not reveal/i.test(message)) {
+    return "Finder 또는 기본 Markdown 앱으로 파일을 열지 못했습니다. 연결 프로그램 설정을 확인하세요.";
+  }
+  return message;
+}
+
+function issueGuidance(code: string) {
+  if (code === "schema_validation") {
+    return "해당 JSON 필드를 공통 스키마에 맞게 수정한 뒤 다시 검사하세요.";
+  }
+  if (code === "invalid_json") {
+    return "JSON 문법 오류를 수정하면 파일 감지가 자동으로 다시 검사합니다.";
+  }
+  if (code === "read_failed" || code === "scan_failed") {
+    return "Finder에서 파일 권한을 확인하거나 데이터 폴더를 다시 선택하세요.";
+  }
+  if (code.startsWith("missing_")) {
+    return "원본 JSON과 파생 Markdown 생성 상태를 확인하세요.";
+  }
+  if (code.includes("mismatch") || code.startsWith("unknown_")) {
+    return "업무·프로젝트·체크포인트 ID의 연결 관계를 확인하세요.";
+  }
+  return "파일 경로를 확인하고 원본 기록을 수정한 뒤 다시 검사하세요.";
 }
 
 function formatTimestamp(value: string) {
@@ -32,8 +69,8 @@ function DetailList({ items, empty }: { items: string[]; empty: string }) {
   if (items.length === 0) return <p className="muted compact">{empty}</p>;
   return (
     <ul className="detail-list">
-      {items.map((item) => (
-        <li key={item}>{item}</li>
+      {items.map((item, index) => (
+        <li key={`${item}-${index}`}>{item}</li>
       ))}
     </ul>
   );
@@ -48,6 +85,7 @@ export function App() {
   const [detail, setDetail] = useState<WorkItemDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const refreshTimer = useRef<number | null>(null);
@@ -61,7 +99,7 @@ export function App() {
       setSnapshot(nextSnapshot);
       setLastUpdatedAt(new Date());
     } catch (nextError) {
-      setError(errorMessage(nextError));
+      setError(friendlyError(nextError));
     } finally {
       setLoading(false);
     }
@@ -74,7 +112,7 @@ export function App() {
       setError(null);
       setLastUpdatedAt(new Date());
     } catch (nextError) {
-      setError(errorMessage(nextError));
+      setError(friendlyError(nextError));
     }
   }, []);
 
@@ -90,7 +128,7 @@ export function App() {
   useEffect(() => {
     let disposed = false;
     let unlisten: Array<() => void> = [];
-    void Promise.all([
+    void Promise.allSettled([
       listen("data-root-changed", () => {
         if (refreshTimer.current !== null) {
           window.clearTimeout(refreshTimer.current);
@@ -102,7 +140,14 @@ export function App() {
       listen<string>("data-root-watch-error", (event) => {
         setError(`파일 변경 감시에 실패했습니다: ${event.payload}`);
       }),
-    ]).then((stopListening) => {
+    ]).then((results) => {
+      const stopListening = results.flatMap((result) =>
+        result.status === "fulfilled" ? [result.value] : [],
+      );
+      const failure = results.find((result) => result.status === "rejected");
+      if (failure?.status === "rejected" && !disposed) {
+        setError(`파일 변경 연결에 실패했습니다: ${friendlyError(failure.reason)}`);
+      }
       if (disposed) {
         stopListening.forEach((stop) => stop());
       } else {
@@ -139,13 +184,14 @@ export function App() {
     let disposed = false;
     setDetailLoading(true);
     setDetailError(null);
+    setActionError(null);
     setDetail(null);
     void getWorkItemDetail(selectedWorkItemId)
       .then((nextDetail) => {
         if (!disposed) setDetail(nextDetail);
       })
       .catch((nextError: unknown) => {
-        if (!disposed) setDetailError(errorMessage(nextError));
+        if (!disposed) setDetailError(friendlyError(nextError));
       })
       .finally(() => {
         if (!disposed) setDetailLoading(false);
@@ -193,7 +239,16 @@ export function App() {
         await applyRoot(selected);
       }
     } catch (nextError) {
-      setError(errorMessage(nextError));
+      setError(friendlyError(nextError));
+    }
+  }
+
+  async function runExternalAction(action: () => Promise<void>) {
+    setActionError(null);
+    try {
+      await action();
+    } catch (nextError) {
+      setActionError(friendlyError(nextError));
     }
   }
 
@@ -233,7 +288,14 @@ export function App() {
         </section>
       )}
 
-      {error && <section className="alert error">{error}</section>}
+      {error && (
+        <section className="alert error recovery-alert">
+          <span>{error}</span>
+          <button className="inline-action" onClick={() => void chooseRoot()} type="button">
+            폴더 다시 선택
+          </button>
+        </section>
+      )}
 
       {snapshot && (
         <>
@@ -340,6 +402,28 @@ export function App() {
                     <span className={`status status-${detail.status}`}>{detail.status}</span>
                   </header>
 
+                  <div className="detail-toolbar">
+                    <button
+                      className="inline-action"
+                      onClick={() =>
+                        void runExternalAction(() => revealWorkItem(detail.id))
+                      }
+                      type="button"
+                    >
+                      Finder에서 보기
+                    </button>
+                    <button
+                      className="inline-action"
+                      onClick={() =>
+                        void runExternalAction(() => openContextMarkdown(detail.id))
+                      }
+                      type="button"
+                    >
+                      Context.md 열기
+                    </button>
+                  </div>
+                  {actionError && <div className="alert error compact-alert">{actionError}</div>}
+
                   <p className="detail-objective">{detail.objective}</p>
                   <div className="tag-row">
                     {detail.classification.work_types.map((type) => (
@@ -408,6 +492,14 @@ export function App() {
                                   ))}
                                 </div>
                               )}
+                              <CheckpointDetails
+                                checkpoint={checkpoint}
+                                onOpenMarkdown={(checkpointId) =>
+                                  void runExternalAction(() =>
+                                    openCheckpointMarkdown(checkpointId),
+                                  )
+                                }
+                              />
                             </div>
                           </article>
                         ))}
@@ -442,6 +534,7 @@ export function App() {
                   >
                     <strong>{issue.message}</strong>
                     <code>{issue.path}</code>
+                    <p>{issueGuidance(issue.code)}</p>
                   </div>
                 ))}
               </div>

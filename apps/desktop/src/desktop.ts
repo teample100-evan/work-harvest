@@ -61,6 +61,31 @@ export interface CheckpointVerification {
   kind: string;
   description: string;
   status: string;
+  command: string | null;
+  evidence_refs: string[];
+}
+
+export interface CheckpointDecision {
+  summary: string;
+  rationale: string;
+  status: string;
+}
+
+export interface CheckpointEvidence {
+  commits: string[];
+  pull_requests: string[];
+  issues: string[];
+  files: string[];
+  commands: string[];
+  urls: string[];
+}
+
+export interface CheckpointGit {
+  repository: string;
+  branch: string | null;
+  head_before: string | null;
+  head_after: string | null;
+  dirty: boolean | null;
 }
 
 export interface CheckpointSummary {
@@ -70,11 +95,15 @@ export interface CheckpointSummary {
   title: string;
   summary: string;
   status_after: string;
+  markdown_path: string;
   activities: string[];
+  decisions: CheckpointDecision[];
   outcomes: string[];
   verifications: CheckpointVerification[];
   blockers: string[];
   next_steps: string[];
+  evidence: CheckpointEvidence;
+  git: CheckpointGit | null;
 }
 
 export interface WorkItemDetail {
@@ -104,4 +133,16 @@ export function getWorkItemDetail(workItemId: string) {
   return invoke<WorkItemDetail>("get_work_item_detail", {
     workItemId,
   });
+}
+
+export function revealWorkItem(workItemId: string) {
+  return invoke<void>("reveal_work_item", { workItemId });
+}
+
+export function openContextMarkdown(workItemId: string) {
+  return invoke<void>("open_context_markdown", { workItemId });
+}
+
+export function openCheckpointMarkdown(checkpointId: string) {
+  return invoke<void>("open_checkpoint_markdown", { checkpointId });
 }

@@ -33,6 +33,8 @@ pub enum CoreError {
     },
     #[error("Work item was not found: {0}")]
     WorkItemNotFound(String),
+    #[error("Data asset was not found: {0}")]
+    DataAssetNotFound(String),
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -112,6 +114,34 @@ pub struct CheckpointVerification {
     pub kind: String,
     pub description: String,
     pub status: String,
+    pub command: Option<String>,
+    pub evidence_refs: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct CheckpointDecision {
+    pub summary: String,
+    pub rationale: String,
+    pub status: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct CheckpointEvidence {
+    pub commits: Vec<String>,
+    pub pull_requests: Vec<String>,
+    pub issues: Vec<String>,
+    pub files: Vec<String>,
+    pub commands: Vec<String>,
+    pub urls: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct CheckpointGit {
+    pub repository: String,
+    pub branch: Option<String>,
+    pub head_before: Option<String>,
+    pub head_after: Option<String>,
+    pub dirty: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -122,11 +152,15 @@ pub struct CheckpointSummary {
     pub title: String,
     pub summary: String,
     pub status_after: String,
+    pub markdown_path: String,
     pub activities: Vec<String>,
+    pub decisions: Vec<CheckpointDecision>,
     pub outcomes: Vec<String>,
     pub verifications: Vec<CheckpointVerification>,
     pub blockers: Vec<String>,
     pub next_steps: Vec<String>,
+    pub evidence: CheckpointEvidence,
+    pub git: Option<CheckpointGit>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -379,13 +413,26 @@ fn context_detail(value: &Value) -> WorkContextDetail {
     }
 }
 
-fn checkpoint_summary(value: &Value) -> CheckpointSummary {
+fn checkpoint_summary(root: &Path, path: &Path, value: &Value) -> CheckpointSummary {
     let outcomes = value
         .get("outcomes")
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
         .filter_map(|outcome| outcome.get("description")?.as_str().map(str::to_string))
+        .collect();
+    let decisions = value
+        .get("decisions")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|decision| {
+            Some(CheckpointDecision {
+                summary: decision.get("summary")?.as_str()?.to_string(),
+                rationale: decision.get("rationale")?.as_str()?.to_string(),
+                status: decision.get("status")?.as_str()?.to_string(),
+            })
+        })
         .collect();
     let verifications = value
         .get("verifications")
@@ -397,9 +444,21 @@ fn checkpoint_summary(value: &Value) -> CheckpointSummary {
                 kind: verification.get("type")?.as_str()?.to_string(),
                 description: verification.get("description")?.as_str()?.to_string(),
                 status: verification.get("status")?.as_str()?.to_string(),
+                command: optional_string_field(verification, "command"),
+                evidence_refs: string_array(verification, "evidence_refs"),
             })
         })
         .collect();
+    let evidence = value.get("evidence").unwrap_or(&Value::Null);
+    let git = value.get("git").and_then(|git| {
+        Some(CheckpointGit {
+            repository: git.get("repository")?.as_str()?.to_string(),
+            branch: optional_string_field(git, "branch"),
+            head_before: optional_string_field(git, "head_before"),
+            head_after: optional_string_field(git, "head_after"),
+            dirty: git.get("dirty").and_then(Value::as_bool),
+        })
+    });
 
     CheckpointSummary {
         id: string_field(value, "id"),
@@ -408,11 +467,22 @@ fn checkpoint_summary(value: &Value) -> CheckpointSummary {
         title: string_field(value, "title"),
         summary: string_field(value, "summary"),
         status_after: string_field(value, "status_after"),
+        markdown_path: relative_path(root, &path.with_extension("md")),
         activities: string_array(value, "activities"),
+        decisions,
         outcomes,
         verifications,
         blockers: string_array(value, "blockers"),
         next_steps: string_array(value, "next_steps"),
+        evidence: CheckpointEvidence {
+            commits: string_array(evidence, "commits"),
+            pull_requests: string_array(evidence, "pull_requests"),
+            issues: string_array(evidence, "issues"),
+            files: string_array(evidence, "files"),
+            commands: string_array(evidence, "commands"),
+            urls: string_array(evidence, "urls"),
+        },
+        git,
     }
 }
 
@@ -438,32 +508,96 @@ fn is_identifier(value: &str) -> bool {
         })
 }
 
-pub fn get_work_item_detail(
-    root: impl AsRef<Path>,
-    work_item_id: &str,
-) -> Result<WorkItemDetail, CoreError> {
-    let root = root.as_ref();
+fn validate_data_root(root: &Path) -> Result<(), CoreError> {
     if !root.exists() {
         return Err(CoreError::MissingRoot(root.to_string_lossy().into_owned()));
     }
     if !root.is_dir() {
         return Err(CoreError::InvalidRoot(root.to_string_lossy().into_owned()));
     }
+    Ok(())
+}
+
+fn canonical_asset(root: &Path, path: &Path) -> Result<PathBuf, CoreError> {
+    let canonical_root = root
+        .canonicalize()
+        .map_err(|_| CoreError::MissingRoot(root.to_string_lossy().into_owned()))?;
+    let canonical_path = path
+        .canonicalize()
+        .map_err(|_| CoreError::DataAssetNotFound(path.to_string_lossy().into_owned()))?;
+    if !canonical_path.starts_with(&canonical_root) {
+        return Err(CoreError::DataAssetNotFound(
+            path.to_string_lossy().into_owned(),
+        ));
+    }
+    Ok(canonical_path)
+}
+
+fn work_item_data_path(root: &Path, work_item_id: &str) -> Result<PathBuf, CoreError> {
+    validate_data_root(root)?;
     if !is_identifier(work_item_id) {
         return Err(CoreError::WorkItemNotFound(work_item_id.to_string()));
     }
-
-    let work_item_path = root
+    let path = root
         .join("work-items")
         .join(work_item_id)
         .join("work-item.json");
-    if !work_item_path.is_file() {
+    let path = canonical_asset(root, &path)
+        .map_err(|_| CoreError::WorkItemNotFound(work_item_id.to_string()))?;
+    let value = read_data_json(&path)?;
+    if value.get("id").and_then(Value::as_str) != Some(work_item_id) {
         return Err(CoreError::WorkItemNotFound(work_item_id.to_string()));
     }
+    Ok(path)
+}
+
+pub fn work_item_directory(
+    root: impl AsRef<Path>,
+    work_item_id: &str,
+) -> Result<PathBuf, CoreError> {
+    let path = work_item_data_path(root.as_ref(), work_item_id)?;
+    path.parent()
+        .map(Path::to_path_buf)
+        .ok_or_else(|| CoreError::WorkItemNotFound(work_item_id.to_string()))
+}
+
+pub fn context_markdown_path(
+    root: impl AsRef<Path>,
+    work_item_id: &str,
+) -> Result<PathBuf, CoreError> {
+    let root = root.as_ref();
+    let path = work_item_data_path(root, work_item_id)?.with_file_name("context.md");
+    canonical_asset(root, &path)
+}
+
+pub fn checkpoint_markdown_path(
+    root: impl AsRef<Path>,
+    checkpoint_id: &str,
+) -> Result<PathBuf, CoreError> {
+    let root = root.as_ref();
+    validate_data_root(root)?;
+    if !is_identifier(checkpoint_id) {
+        return Err(CoreError::DataAssetNotFound(checkpoint_id.to_string()));
+    }
+
+    for path in json_files(&root.join("records"))? {
+        let Ok(value) = read_data_json(&path) else {
+            continue;
+        };
+        if value.get("id").and_then(Value::as_str) == Some(checkpoint_id) {
+            return canonical_asset(root, &path.with_extension("md"));
+        }
+    }
+    Err(CoreError::DataAssetNotFound(checkpoint_id.to_string()))
+}
+
+pub fn get_work_item_detail(
+    root: impl AsRef<Path>,
+    work_item_id: &str,
+) -> Result<WorkItemDetail, CoreError> {
+    let root = root.as_ref();
+    let work_item_path = work_item_data_path(root, work_item_id)?;
     let work_item = read_data_json(&work_item_path)?;
-    if work_item.get("id").and_then(Value::as_str) != Some(work_item_id) {
-        return Err(CoreError::WorkItemNotFound(work_item_id.to_string()));
-    }
 
     let context_path = work_item_path.with_file_name("context.json");
     let context = if context_path.is_file() {
@@ -478,7 +612,7 @@ pub fn get_work_item_detail(
             continue;
         };
         if value.get("work_item_id").and_then(Value::as_str) == Some(work_item_id) {
-            checkpoints.push(checkpoint_summary(&value));
+            checkpoints.push(checkpoint_summary(root, &path, &value));
         }
     }
     checkpoints.sort_by(|left, right| {
@@ -720,6 +854,12 @@ mod tests {
         assert_eq!(detail.checkpoints.len(), 1);
         assert_eq!(detail.checkpoints[0].id, "CP-20260713-001");
         assert_eq!(detail.checkpoints[0].verifications[0].status, "passed");
+        assert_eq!(detail.checkpoints[0].decisions.len(), 1);
+        assert_eq!(detail.checkpoints[0].evidence.commits, ["abc1234"]);
+        assert_eq!(
+            detail.checkpoints[0].markdown_path,
+            "records/2026/07/13/CP-20260713-001.md"
+        );
     }
 
     #[test]
@@ -730,6 +870,22 @@ mod tests {
         let error = get_work_item_detail(directory.path(), "../AUTH-142").unwrap_err();
 
         assert!(matches!(error, CoreError::WorkItemNotFound(_)));
+    }
+
+    #[test]
+    fn resolves_only_known_markdown_assets() {
+        let directory = tempdir().unwrap();
+        write_fixture(directory.path());
+
+        let context = context_markdown_path(directory.path(), "AUTH-142").unwrap();
+        let checkpoint = checkpoint_markdown_path(directory.path(), "CP-20260713-001").unwrap();
+
+        assert!(context.ends_with("work-items/AUTH-142/context.md"));
+        assert!(checkpoint.ends_with("records/2026/07/13/CP-20260713-001.md"));
+        assert!(matches!(
+            checkpoint_markdown_path(directory.path(), "../secret"),
+            Err(CoreError::DataAssetNotFound(_))
+        ));
     }
 
     #[test]

@@ -75,7 +75,7 @@ export function SystemOverview({
         </article>
       )}
 
-      <footer className="watcher-status">
+      <footer className="watcher-status" role="status">
         외부 파일 변경 감시 중
         {lastUpdatedAt && ` · 마지막 확인 ${lastUpdatedAt.toLocaleTimeString("ko-KR")}`}
         {indexActivity &&

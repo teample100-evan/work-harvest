@@ -57,6 +57,7 @@ export function WorkItemBrowser({
         <div className="work-item-list">
           {items.map((item) => (
             <button
+              aria-current={selectedWorkItemId === item.id ? "true" : undefined}
               className={`work-item-button ${selectedWorkItemId === item.id ? "selected" : ""}`}
               key={item.id}
               onClick={() => onSelect(item.id)}

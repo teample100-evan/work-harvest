@@ -12,6 +12,9 @@ interface DashboardProps {
 export function Dashboard({ controller }: DashboardProps) {
   const { snapshot } = controller;
   const errorCount = snapshot?.issues.filter((issue) => issue.severity === "error").length ?? 0;
+  const hasVisibleWorkItem = controller.filteredItems.some(
+    (item) => item.id === controller.selectedWorkItemId,
+  );
 
   return (
     <main className="app-shell">
@@ -42,7 +45,9 @@ export function Dashboard({ controller }: DashboardProps) {
       </header>
 
       {controller.loading && (
-        <section className="panel empty-state">데이터를 확인하는 중입니다.</section>
+        <section className="panel empty-state" role="status">
+          데이터 확인 중…
+        </section>
       )}
 
       {!controller.loading && !snapshot && (
@@ -60,7 +65,7 @@ export function Dashboard({ controller }: DashboardProps) {
       )}
 
       {controller.error && (
-        <section className="alert error recovery-alert">
+        <section className="alert error recovery-alert" role="alert">
           <span>{controller.error}</span>
           <button
             className="inline-action"
@@ -79,7 +84,10 @@ export function Dashboard({ controller }: DashboardProps) {
               <p className="section-label">현재 작업 공간</p>
               <p className="root-path">{snapshot.root}</p>
             </div>
-            <div className={`health ${errorCount > 0 ? "unhealthy" : "healthy"}`}>
+            <div
+              className={`health ${errorCount > 0 ? "unhealthy" : "healthy"}`}
+              role="status"
+            >
               <span className="health-dot" />
               {errorCount > 0 ? `오류 ${errorCount}개` : "파일 검증 정상"}
             </div>
@@ -98,9 +106,14 @@ export function Dashboard({ controller }: DashboardProps) {
             />
             <WorkItemDetailPanel
               actionError={controller.actionError}
-              detail={controller.detail}
-              detailError={controller.detailError}
-              detailLoading={controller.detailLoading}
+              detail={hasVisibleWorkItem ? controller.detail : null}
+              detailError={hasVisibleWorkItem ? controller.detailError : null}
+              detailLoading={hasVisibleWorkItem && controller.detailLoading}
+              emptyMessage={
+                controller.filteredItems.length === 0
+                  ? "검색어나 상태 조건을 바꾸면 업무 상세를 다시 볼 수 있습니다."
+                  : undefined
+              }
               onAddCheckpoint={(workItemId) =>
                 controller.setEditor({ mode: "checkpoint", workItemId })
               }

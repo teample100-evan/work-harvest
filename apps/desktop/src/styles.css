@@ -340,6 +340,12 @@ h2 {
   background: rgb(224 232 222 / 55%);
 }
 
+.work-item-button:focus-visible,
+.inline-action:focus-visible {
+  outline: 3px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
 .work-item-button.selected {
   background: #e1eade;
   box-shadow: inset 3px 0 #41694d;
@@ -1382,6 +1388,34 @@ footer {
 @media (max-width: 860px) {
   .app-shell {
     padding: 26px;
+  }
+
+  .topbar,
+  .root-summary,
+  .detail-header,
+  .editor-section-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .topbar-actions,
+  .detail-toolbar,
+  .editor-footer {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+
+  .root-summary {
+    gap: 12px;
+  }
+
+  .editor-preserved {
+    text-align: left;
+  }
+
+  .editor-footer-copy {
+    width: 100%;
+    flex-basis: 100%;
   }
 
   .workspace-grid,

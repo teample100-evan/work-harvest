@@ -8,6 +8,7 @@ interface WorkItemDetailPanelProps {
   detail: WorkItemDetail | null;
   detailError: string | null;
   detailLoading: boolean;
+  emptyMessage?: string;
   onAddCheckpoint: (workItemId: string) => void;
   onCreatePerformanceNote: (workItemId: string) => void;
   onEdit: (workItemId: string) => void;
@@ -21,6 +22,7 @@ export function WorkItemDetailPanel({
   detail,
   detailError,
   detailLoading,
+  emptyMessage = "업무를 선택하면 지금 상태와 이어서 할 일을 보여줍니다.",
   onAddCheckpoint,
   onCreatePerformanceNote,
   onEdit,
@@ -29,12 +31,12 @@ export function WorkItemDetailPanel({
   onReveal,
 }: WorkItemDetailPanelProps) {
   return (
-    <article className="panel detail-panel">
-      {detailLoading && <p className="muted">업무 상세를 불러오는 중입니다.</p>}
-      {detailError && <div className="alert error">{detailError}</div>}
+    <article className="panel detail-panel" aria-busy={detailLoading}>
+      {detailLoading && <p className="muted" role="status">업무 상세를 불러오는 중…</p>}
+      {detailError && <div className="alert error" role="alert">{detailError}</div>}
       {!detailLoading && !detail && !detailError && (
         <div className="detail-empty">
-          <p className="muted">업무를 선택하면 지금 상태와 이어서 할 일을 보여줍니다.</p>
+          <p className="muted">{emptyMessage}</p>
         </div>
       )}
       {!detailLoading && detail && (
@@ -74,7 +76,7 @@ export function WorkItemDetailPanel({
               Context.md 열기
             </button>
           </div>
-          {actionError && <div className="alert error compact-alert">{actionError}</div>}
+          {actionError && <div className="alert error compact-alert" role="alert">{actionError}</div>}
 
           <p className="detail-objective">{detail.objective}</p>
           <div className="tag-row">

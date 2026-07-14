@@ -2,13 +2,26 @@
 
 ## 실행 방식
 
-개발 저장소에서는 다음과 같이 실행한다.
+native Rust CLI를 빌드하고 실행한다.
+
+```bash
+cargo build --release --package work-harvest-cli
+./target/release/wh <command>
+```
+
+개발 중에는 다음 단축 명령도 사용할 수 있다.
+
+```bash
+pnpm wh:rust -- <command>
+```
+
+전환 기간의 Node 호환 CLI는 다음과 같이 실행한다.
 
 ```bash
 pnpm wh <command>
 ```
 
-패키지의 `bin`을 실행 경로에 설치한 환경에서는 `wh <command>`를 사용한다.
+Rust 바이너리를 실행 경로에 설치한 환경에서는 `wh <command>`를 사용한다. 두 CLI의 명령, JSON/YAML 입력, JSON 출력과 종료 코드 계약은 같다.
 
 데이터 저장 위치는 다음 우선순위로 결정한다.
 
@@ -16,7 +29,7 @@ pnpm wh <command>
 2. `WORK_HARVEST_HOME`
 3. 현재 작업 디렉터리
 
-`WORK_HARVEST_CLI_HOME`은 Codex Skill 래퍼가 CLI 코드의 checkout을 찾는 용도다. 기록 데이터 위치를 정하는 `WORK_HARVEST_HOME`과 구분한다.
+`WORK_HARVEST_CLI_HOME`은 Codex Skill 래퍼가 CLI checkout을 찾는 용도이고 `WORK_HARVEST_CLI_BIN`은 별도 설치한 Rust 바이너리를 직접 지정한다. 기록 데이터 위치를 정하는 `WORK_HARVEST_HOME`과 구분한다.
 
 Codex `record-work` Skill은 환경변수가 없으면 `~/work-records`를 기본 데이터 저장소로 사용한다. 따라서 도구 코드 저장소와 실제 업무 기록이 섞이지 않는다.
 
@@ -177,7 +190,7 @@ pnpm wh checkpoint last --work-item <id> [--root <path>] [--json]
 pnpm wh report performance-note --work-item <id> [--output <path>] [--root <path>] [--json]
 ```
 
-업무 항목의 메타데이터·현재 context·연결된 체크포인트를 합쳐 성과 노트 Markdown 초안을 만든다. Node CLI는 입력·출력 계약을 유지하고 렌더링과 create-only commit은 데스크톱과 같은 Rust Core에 위임한다. 기본 경로는 다음과 같다.
+업무 항목의 메타데이터·현재 context·연결된 체크포인트를 합쳐 성과 노트 Markdown 초안을 만든다. native CLI와 Node 호환 CLI 모두 렌더링과 create-only commit을 데스크톱과 같은 Rust Core에 위임한다. 기본 경로는 다음과 같다.
 
 ```text
 reports/performance-notes/<work_item_id>-<마지막_작업일>.md

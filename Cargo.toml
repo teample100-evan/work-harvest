@@ -1,6 +1,7 @@
 [workspace]
 members = [
   "apps/desktop/src-tauri",
+  "crates/work-harvest-cli",
   "crates/work-harvest-core",
   "crates/work-harvest-write-helper",
 ]
@@ -19,6 +20,7 @@ jsonschema = { version = "0.47.0", default-features = false }
 notify = "8"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
+serde_yaml_ng = "0.10.0"
 sha2 = "0.11"
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-build = "2"

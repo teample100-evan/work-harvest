@@ -6,19 +6,39 @@ source_checkout="$(cd "$skill_dir/../../.." && pwd)"
 
 if [[ -n "${WORK_HARVEST_CLI_HOME:-}" ]]; then
   harness_root="$WORK_HARVEST_CLI_HOME"
-elif [[ -f "$source_checkout/package.json" && -f "$source_checkout/bin/wh.js" ]]; then
+elif [[ -f "$source_checkout/Cargo.toml" || -f "$source_checkout/package.json" ]]; then
   harness_root="$source_checkout"
 else
   harness_root=""
 fi
 
-if [[ ! -f "$harness_root/package.json" || ! -f "$harness_root/bin/wh.js" ]]; then
-  echo "Work Harvest CLI not found. Set WORK_HARVEST_CLI_HOME to its checkout." >&2
+if [[ -n "${WORK_HARVEST_CLI_BIN:-}" ]]; then
+  if [[ ! -x "$WORK_HARVEST_CLI_BIN" ]]; then
+    echo "WORK_HARVEST_CLI_BIN is not executable: $WORK_HARVEST_CLI_BIN" >&2
+    exit 1
+  fi
+  rust_cli="$WORK_HARVEST_CLI_BIN"
+else
+  rust_cli=""
+  for candidate in "$harness_root/target/release/wh" "$harness_root/target/debug/wh"; do
+    if [[ -x "$candidate" ]]; then
+      rust_cli="$candidate"
+      break
+    fi
+  done
+fi
+
+if [[ -z "$rust_cli" && ( ! -f "$harness_root/package.json" || ! -f "$harness_root/bin/wh.js" ) ]]; then
+  echo "Work Harvest CLI not found. Set WORK_HARVEST_CLI_BIN or WORK_HARVEST_CLI_HOME." >&2
   exit 1
 fi
 
 # Keep business records separate from the tool checkout unless the caller
 # deliberately selects another store.
 export WORK_HARVEST_HOME="${WORK_HARVEST_HOME:-$HOME/work-records}"
+
+if [[ -n "$rust_cli" ]]; then
+  exec "$rust_cli" "$@"
+fi
 
 exec pnpm --dir "$harness_root" wh "$@"

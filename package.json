@@ -9,6 +9,7 @@
   },
   "scripts": {
     "wh": "node ./bin/wh.js",
+    "wh:rust": "cargo run --quiet --package work-harvest-cli",
     "test": "node --test",
     "validate:examples": "node ./bin/wh.js validate --include-examples",
     "check": "node --check ./bin/wh.js && node --check ./src/cli.js && node --test && node ./bin/wh.js validate --include-examples",
@@ -16,6 +17,7 @@
     "desktop:build": "pnpm --dir apps/desktop tauri build",
     "desktop:frontend:build": "pnpm --dir apps/desktop build",
     "rust:test": "cargo test --workspace",
+    "rust:cli:build": "cargo build --release --package work-harvest-cli",
     "check:all": "pnpm check && pnpm desktop:frontend:build && cargo test --workspace"
   },
   "engines": {

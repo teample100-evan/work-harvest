@@ -1,6 +1,6 @@
 # Work Harvest 데스크톱 앱 구현 계획
 
-- 상태: M3 안전한 쓰기 완료, M2 하루 soak 병행
+- 상태: M4 Rust CLI 통합 완료, M2 하루 soak 병행
 - 최초 작성일: 2026-07-14
 - 대상: macOS Apple Silicon
 - 관련 결정: [ADR 0001](./adr/0001-tauri-desktop-app.md), [ADR 0002](./adr/0002-recoverable-local-write-transactions.md)
@@ -314,22 +314,37 @@ Node writer 잠금 호환 검증 결과(2026-07-14):
 - [x] 모든 사용자 노출 writer가 같은 advisory lock에 참여해 동시 쓰기에서 기존 기록을 덮어쓰지 않는다.
 - [x] 실패 후 변경 집합이 검증 가능한 상태로 복구된다.
 
-업무 항목, 체크포인트와 성과 노트 GUI는 Tauri 명령과 Rust Core의 동일한 preview·commit 입력을 사용한다. GUI에서 편집하지 않는 저장소·링크·Context 파일·Git 기준점은 patch에서 생략해 보존한다. M3 이후 다음 구현 단위는 이 Core를 직접 사용하는 M4 Rust CLI 통합이다.
+업무 항목, 체크포인트와 성과 노트 GUI는 Tauri 명령과 Rust Core의 동일한 preview·commit 입력을 사용한다. GUI에서 편집하지 않는 저장소·링크·Context 파일·Git 기준점은 patch에서 생략해 보존한다.
 
 ### M4. Rust CLI 통합
 
-상태: 예정
+상태: 완료
 
-- `work-harvest-core`를 사용하는 Rust CLI 구현
-- 기존 명령과 JSON 출력 호환
-- 기존 fixture를 이용한 Node·Rust 비교 테스트
-- Codex Skill 래퍼 연결
-- 검증 후 Node.js 구현 단계적 제거
+- [x] `work-harvest-core`를 직접 사용하는 native `wh` 바이너리 구현
+- [x] 기존 7개 명령, JSON/YAML 입력, human·JSON 출력과 종료 코드 호환
+- [x] 원본 업무·Context·체크포인트를 반환하는 공용 Core 조회 API
+- [x] 기존 fixture를 이용한 Node·Rust byte-for-byte 읽기 명령 비교 테스트
+- [x] 업무 생성·체크포인트·성과 노트·검증의 Rust CLI 단독 통합 테스트
+- [x] Codex Skill 래퍼의 Rust release/debug 우선 실행과 Node fallback
+- [x] `WORK_HARVEST_CLI_BIN` 명시적 바이너리 선택
+
+Node 구현은 서명된 Rust CLI 직접 배포와 실사용 안정성을 확인할 때까지 비교 기준과 rollback fallback으로 보존한다.
 
 완료 조건:
 
 - 기존 통합 테스트에 대응하는 Rust 테스트가 통과한다.
 - Codex Skill의 사용 명령과 사용자 데이터 형식이 바뀌지 않는다.
+
+검증 결과(2026-07-14):
+
+| 항목 | 결과 |
+| --- | --- |
+| 조회 호환 | 예제 데이터의 `list`·`show`·`last`·`validate` JSON stdout이 Node CLI와 바이트 단위로 일치 |
+| 쓰기 흐름 | 업무 생성 → 체크포인트 → 조회 → 성과 노트 → 전체 검증을 native CLI만으로 완료 |
+| 입력·오류 | 중첩 YAML 입력, stdin, 잘못된 출력 확장자의 종료 코드 2와 usage 출력을 확인 |
+| Skill 전환 | 기존 `<skill-dir>/scripts/wh` 명령을 유지하면서 Rust 바이너리 우선·Node fallback 확인 |
+| 자동 검증 | Rust CLI 4개·Core 41개·Desktop 5개·write helper 5개·Node 4개 테스트 통과 |
+| release 산출물 | Apple Silicon native `wh` 바이너리 7.5MB |
 
 ### M5. 직접 배포
 
@@ -338,8 +353,10 @@ Node writer 잠금 호환 검증 결과(2026-07-14):
 - 앱 아이콘과 번들 식별자 확정
 - Developer ID 서명과 Apple 공증
 - DMG 생성
+- Apple Silicon `wh` 바이너리와 앱을 같은 GitHub Release에 게시
 - 서명된 자동 업데이트
 - GitHub Releases 배포
+- 배포된 native CLI 안정화 후 Node fallback 제거
 - 필요하면 Universal binary 추가
 
 ## 6. 데이터 무결성 전략
@@ -405,3 +422,4 @@ Node writer 잠금 호환 검증 결과(2026-07-14):
 | 2026-07-14 | M3 Tauri 업무 항목 생성·수정 명령, 저장 전 세 파일 diff와 revision 충돌 복구 GUI 구현 |
 | 2026-07-14 | M3 체크포인트 정규화·렌더링 Core 이전, Node 호환 5파일 트랜잭션과 GUI 기록 흐름 구현 |
 | 2026-07-14 | M3 성과 노트 렌더링 Core 이전, source revision 보호·전체 diff·GUI 생성 후 열기 구현으로 안전 쓰기 완료 |
+| 2026-07-14 | M4 native Rust CLI 7개 명령·Node 출력 호환·YAML 입력·Skill 우선 실행 구현 완료 |

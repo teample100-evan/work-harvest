@@ -1,4 +1,5 @@
 mod checkpoints;
+mod queries;
 mod reports;
 mod schema;
 mod work_items;
@@ -11,6 +12,11 @@ pub use checkpoints::{
     CheckpointSourceInput, CheckpointVerificationDocument, CheckpointWorkPeriodDocument,
     CheckpointWorkPeriodInput, CheckpointWriteError, CheckpointWritePreview, CheckpointWriteResult,
     capture_checkpoint, normalize_checkpoint, preview_capture_checkpoint, render_checkpoint,
+};
+pub use queries::{
+    QueryError, StoredCheckpointPaths, StoredCheckpointRecord, StoredWorkItemRecord,
+    WorkItemQueryResult, find_last_checkpoint, list_checkpoints_for_work_item,
+    list_work_item_records, read_work_item_record, show_work_item,
 };
 pub use reports::{
     PerformanceNoteCheckpoint, PerformanceNoteInput, PerformanceNotePaths,

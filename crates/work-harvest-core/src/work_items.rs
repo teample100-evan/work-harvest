@@ -212,9 +212,33 @@ pub struct WorkItemEditRevisions {
 pub struct WorkItemEditSnapshot {
     pub work_item: WorkItemDocument,
     pub context: WorkContextDocument,
+    pub work_item_json: String,
+    pub context_json: String,
     pub markdown: String,
     pub paths: WorkItemPaths,
     pub revisions: WorkItemEditRevisions,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkItemChangeOperation {
+    Create,
+    Replace,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct WorkItemFileChange {
+    pub path: String,
+    pub operation: WorkItemChangeOperation,
+    pub before: Option<String>,
+    pub after: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct WorkItemWritePreview {
+    pub work_item: WorkItemDocument,
+    pub context: WorkContextDocument,
+    pub files: Vec<WorkItemFileChange>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -524,6 +548,22 @@ fn json_bytes<T: Serialize>(
     Ok(bytes)
 }
 
+fn json_text<T: Serialize>(
+    document: &'static str,
+    value: &T,
+) -> Result<String, WorkItemWriteError> {
+    String::from_utf8(json_bytes(document, value)?).map_err(|_| {
+        WorkItemWriteError::Inconsistent(format!("serialized {document} is not UTF-8"))
+    })
+}
+
+fn utf8_text(relative_path: &str, bytes: Vec<u8>) -> Result<String, WorkItemWriteError> {
+    String::from_utf8(bytes).map_err(|source| WorkItemWriteError::Read {
+        path: relative_path.to_string(),
+        source: std::io::Error::new(std::io::ErrorKind::InvalidData, source),
+    })
+}
+
 fn file_revision(bytes: &[u8]) -> FileRevision {
     FileRevision {
         sha256: hash_bytes(bytes),
@@ -569,11 +609,9 @@ fn read_snapshot_from_root(
     let (markdown_bytes, context_revision) = read_bytes(root, &paths.context)?;
     let work_item: WorkItemDocument = parse_json(&paths.work_item, &work_item_bytes)?;
     let context: WorkContextDocument = parse_json(&paths.context_data, &context_bytes)?;
-    let markdown =
-        String::from_utf8(markdown_bytes).map_err(|source| WorkItemWriteError::Read {
-            path: paths.context.clone(),
-            source: std::io::Error::new(std::io::ErrorKind::InvalidData, source),
-        })?;
+    let work_item_json = utf8_text(&paths.work_item, work_item_bytes)?;
+    let context_json = utf8_text(&paths.context_data, context_bytes)?;
+    let markdown = utf8_text(&paths.context, markdown_bytes)?;
     if work_item.id != work_item_id {
         return Err(WorkItemWriteError::WorkItemNotFound(
             work_item_id.to_string(),
@@ -588,6 +626,8 @@ fn read_snapshot_from_root(
     Ok(WorkItemEditSnapshot {
         work_item,
         context,
+        work_item_json,
+        context_json,
         markdown,
         paths,
         revisions: WorkItemEditRevisions {
@@ -595,6 +635,46 @@ fn read_snapshot_from_root(
             context_data: context_data_revision,
             context: context_revision,
         },
+    })
+}
+
+pub fn preview_create_work_item(
+    root: impl AsRef<Path>,
+    input: WorkItemCreateInput,
+    now: &str,
+) -> Result<WorkItemWritePreview, WorkItemWriteError> {
+    let (work_item, context) = normalize_work_item(input, now)?;
+    let paths = paths(&work_item.id);
+    let writer = DataRootWriter::acquire(root)?;
+    for path in [&paths.work_item, &paths.context_data, &paths.context] {
+        if writer.revision(path)?.is_some() {
+            return Err(WriteError::CreateConflict(path.clone()).into());
+        }
+    }
+    let files = vec![
+        WorkItemFileChange {
+            path: paths.work_item,
+            operation: WorkItemChangeOperation::Create,
+            before: None,
+            after: json_text("work-item.json", &work_item)?,
+        },
+        WorkItemFileChange {
+            path: paths.context_data,
+            operation: WorkItemChangeOperation::Create,
+            before: None,
+            after: json_text("context.json", &context)?,
+        },
+        WorkItemFileChange {
+            path: paths.context,
+            operation: WorkItemChangeOperation::Create,
+            before: None,
+            after: render_context(&work_item, &context),
+        },
+    ];
+    Ok(WorkItemWritePreview {
+        work_item,
+        context,
+        files,
     })
 }
 
@@ -660,6 +740,55 @@ pub fn read_work_item_for_edit(
 ) -> Result<WorkItemEditSnapshot, WorkItemWriteError> {
     let writer = DataRootWriter::acquire(root)?;
     read_snapshot_from_root(writer.root(), work_item_id)
+}
+
+pub fn preview_update_work_item(
+    root: impl AsRef<Path>,
+    work_item_id: &str,
+    expected: WorkItemEditRevisions,
+    patch: WorkItemUpdatePatch,
+    now: &str,
+) -> Result<WorkItemWritePreview, WorkItemWriteError> {
+    if !crate::is_identifier(work_item_id) {
+        return Err(WorkItemWriteError::WorkItemNotFound(
+            work_item_id.to_string(),
+        ));
+    }
+    let writer = DataRootWriter::acquire(root)?;
+    let paths = paths(work_item_id);
+    verify_revision(&writer, &paths.work_item, &expected.work_item)?;
+    verify_revision(&writer, &paths.context_data, &expected.context_data)?;
+    verify_revision(&writer, &paths.context, &expected.context)?;
+    let snapshot = read_snapshot_from_root(writer.root(), work_item_id)?;
+    let before_work_item = snapshot.work_item_json;
+    let before_context = snapshot.context_json;
+    let before_markdown = snapshot.markdown;
+    let (work_item, context) = apply_update(snapshot.work_item, snapshot.context, patch, now)?;
+    let files = vec![
+        WorkItemFileChange {
+            path: paths.work_item,
+            operation: WorkItemChangeOperation::Replace,
+            before: Some(before_work_item),
+            after: json_text("work-item.json", &work_item)?,
+        },
+        WorkItemFileChange {
+            path: paths.context_data,
+            operation: WorkItemChangeOperation::Replace,
+            before: Some(before_context),
+            after: json_text("context.json", &context)?,
+        },
+        WorkItemFileChange {
+            path: paths.context,
+            operation: WorkItemChangeOperation::Replace,
+            before: Some(before_markdown),
+            after: render_context(&work_item, &context),
+        },
+    ];
+    Ok(WorkItemWritePreview {
+        work_item,
+        context,
+        files,
+    })
 }
 
 fn verify_revision(
@@ -957,12 +1086,21 @@ process.stdout.write(JSON.stringify({
     fn creates_and_reads_one_consistent_edit_snapshot() {
         let directory = tempdir().unwrap();
 
+        let preview =
+            preview_create_work_item(directory.path(), input("AUTH-142"), CREATED_AT).unwrap();
+        assert_eq!(preview.files.len(), 3);
+        assert!(preview.files.iter().all(|file| file.before.is_none()));
+        assert!(!directory.path().join("work-items/AUTH-142").exists());
+
         let created = create_work_item(directory.path(), input("AUTH-142"), CREATED_AT).unwrap();
         let snapshot = read_work_item_for_edit(directory.path(), "AUTH-142").unwrap();
 
         assert_eq!(created.work_item, snapshot.work_item);
         assert_eq!(created.context, snapshot.context);
         assert_eq!(created.revisions, snapshot.revisions);
+        assert_eq!(snapshot.work_item_json, preview.files[0].after);
+        assert_eq!(snapshot.context_json, preview.files[1].after);
+        assert_eq!(snapshot.markdown, preview.files[2].after);
         assert_eq!(created.commit.written_paths.len(), 3);
         assert_eq!(
             snapshot.markdown,
@@ -1000,23 +1138,37 @@ process.stdout.write(JSON.stringify({
         let immutable_project = created.work_item.project_id.clone();
         let immutable_created_at = created.work_item.created_at.clone();
 
+        let patch = WorkItemUpdatePatch {
+            title: Some("인증 재시도 완료".to_string()),
+            status: Some("completed".to_string()),
+            context: Some(WorkContextPatch {
+                current_state: Some("동시 요청 검증까지 완료했다.".to_string()),
+                verification: Some(ContextVerificationInput {
+                    completed: Some(vec!["동시 요청 테스트 통과".to_string()]),
+                    pending: Some(Vec::new()),
+                }),
+                ..WorkContextPatch::default()
+            }),
+            ..WorkItemUpdatePatch::default()
+        };
+        let preview = preview_update_work_item(
+            directory.path(),
+            "AUTH-142",
+            created.revisions.clone(),
+            patch.clone(),
+            UPDATED_AT,
+        )
+        .unwrap();
+        assert_eq!(preview.files.len(), 3);
+        assert!(preview.files.iter().all(|file| file.before.is_some()));
+        let unchanged = read_work_item_for_edit(directory.path(), "AUTH-142").unwrap();
+        assert_eq!(unchanged.work_item, created.work_item);
+
         let updated = update_work_item(
             directory.path(),
             "AUTH-142",
             created.revisions.clone(),
-            WorkItemUpdatePatch {
-                title: Some("인증 재시도 완료".to_string()),
-                status: Some("completed".to_string()),
-                context: Some(WorkContextPatch {
-                    current_state: Some("동시 요청 검증까지 완료했다.".to_string()),
-                    verification: Some(ContextVerificationInput {
-                        completed: Some(vec!["동시 요청 테스트 통과".to_string()]),
-                        pending: Some(Vec::new()),
-                    }),
-                    ..WorkContextPatch::default()
-                }),
-                ..WorkItemUpdatePatch::default()
-            },
+            patch,
             UPDATED_AT,
         )
         .unwrap();
@@ -1026,6 +1178,8 @@ process.stdout.write(JSON.stringify({
         assert_eq!(updated.work_item.updated_at, UPDATED_AT);
         assert_eq!(updated.work_item.completed_at.as_deref(), Some(UPDATED_AT));
         assert_eq!(updated.context.updated_at, UPDATED_AT);
+        assert_eq!(updated.work_item, preview.work_item);
+        assert_eq!(updated.context, preview.context);
         assert_ne!(updated.revisions.work_item, created.revisions.work_item);
         assert_ne!(
             updated.revisions.context_data,
@@ -1034,6 +1188,9 @@ process.stdout.write(JSON.stringify({
         assert_ne!(updated.revisions.context, created.revisions.context);
         let snapshot = read_work_item_for_edit(directory.path(), "AUTH-142").unwrap();
         assert_eq!(snapshot.work_item, updated.work_item);
+        assert_eq!(snapshot.work_item_json, preview.files[0].after);
+        assert_eq!(snapshot.context_json, preview.files[1].after);
+        assert_eq!(snapshot.markdown, preview.files[2].after);
         assert!(snapshot.markdown.contains("# AUTH-142 인증 재시도 완료"));
         assert!(
             crate::inspect_data_root(directory.path())

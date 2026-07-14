@@ -15,6 +15,7 @@ import {
 import { AlwaysOnStatus } from "./AlwaysOnStatus";
 import { CheckpointDetails } from "./CheckpointDetails";
 import { useSnapshotNotifications } from "./useSnapshotNotifications";
+import { WorkItemEditor } from "./WorkItemEditor";
 
 const DATA_ROOT_KEY = "work-harvest:data-root";
 
@@ -25,6 +26,10 @@ interface IndexActivity {
   pathCount: number | null;
   fullRescan: boolean;
 }
+
+type EditorState =
+  | { mode: "create" }
+  | { mode: "edit"; workItemId: string };
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
@@ -101,6 +106,7 @@ export function App() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [detailRevision, setDetailRevision] = useState(0);
   const [indexActivity, setIndexActivity] = useState<IndexActivity | null>(null);
+  const [editor, setEditor] = useState<EditorState | null>(null);
   const selectedWorkItemIdRef = useRef<string | null>(null);
   const requestGeneration = useRef(0);
   const {
@@ -322,6 +328,14 @@ export function App() {
     }
   }
 
+  async function handleWorkItemSaved(workItemId: string) {
+    setQuery("");
+    setStatusFilter("all");
+    selectedWorkItemIdRef.current = workItemId;
+    setSelectedWorkItemId(workItemId);
+    await refresh();
+  }
+
   const hasErrors = snapshot?.issues.some((issue) => issue.severity === "error");
 
   return (
@@ -333,9 +347,14 @@ export function App() {
         </div>
         <div className="topbar-actions">
           {snapshot && (
-            <button className="button secondary" onClick={() => void refresh()}>
-              다시 검사
-            </button>
+            <>
+              <button className="button secondary" onClick={() => setEditor({ mode: "create" })}>
+                새 업무
+              </button>
+              <button className="button secondary" onClick={() => void refresh()}>
+                다시 검사
+              </button>
+            </>
           )}
           <button className="button primary" onClick={() => void chooseRoot()}>
             {snapshot ? "폴더 변경" : "데이터 폴더 선택"}
@@ -479,6 +498,13 @@ export function App() {
                   </header>
 
                   <div className="detail-toolbar">
+                    <button
+                      className="inline-action"
+                      onClick={() => setEditor({ mode: "edit", workItemId: detail.id })}
+                      type="button"
+                    >
+                      업무 편집
+                    </button>
                     <button
                       className="inline-action"
                       onClick={() =>
@@ -631,6 +657,15 @@ export function App() {
           </footer>
         </>
       )}
+
+      {editor ? (
+        <WorkItemEditor
+          mode={editor.mode}
+          workItemId={editor.mode === "edit" ? editor.workItemId : undefined}
+          onClose={() => setEditor(null)}
+          onSaved={handleWorkItemSaved}
+        />
+      ) : null}
     </main>
   );
 }

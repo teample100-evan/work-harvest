@@ -14,8 +14,13 @@ use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_opener::OpenerExt;
 use work_harvest_core::{
-    DataRootIndex, DataRootSnapshot, DataRootUpdate, WorkItemDetail, checkpoint_markdown_path,
-    context_markdown_path, get_work_item_detail as get_detail, work_item_directory,
+    DataRootIndex, DataRootSnapshot, DataRootUpdate, WorkItemCreateInput, WorkItemDetail,
+    WorkItemEditRevisions, WorkItemEditSnapshot, WorkItemUpdatePatch, WorkItemWriteError,
+    WorkItemWritePreview, WorkItemWriteResult, WriteError, checkpoint_markdown_path,
+    context_markdown_path, create_work_item as create_item, get_work_item_detail as get_detail,
+    preview_create_work_item as preview_create_item,
+    preview_update_work_item as preview_update_item, read_work_item_for_edit,
+    update_work_item as update_item, work_item_directory,
 };
 
 const WATCH_QUIET_PERIOD: Duration = Duration::from_millis(350);
@@ -35,6 +40,61 @@ struct DataRootChange {
     update: DataRootUpdate,
     paths: Vec<String>,
     event_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum DesktopWriteErrorKind {
+    RootRequired,
+    NotFound,
+    Validation,
+    CreateConflict,
+    RevisionConflict,
+    LockBusy,
+    WriteFailed,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+struct DesktopWriteError {
+    kind: DesktopWriteErrorKind,
+    message: String,
+}
+
+impl DesktopWriteError {
+    fn root_required(message: String) -> Self {
+        Self {
+            kind: DesktopWriteErrorKind::RootRequired,
+            message,
+        }
+    }
+}
+
+fn desktop_write_error(error: WorkItemWriteError) -> DesktopWriteError {
+    let kind = match &error {
+        WorkItemWriteError::WorkItemNotFound(_) => DesktopWriteErrorKind::NotFound,
+        WorkItemWriteError::InvalidInput(_)
+        | WorkItemWriteError::Validation { .. }
+        | WorkItemWriteError::Inconsistent(_) => DesktopWriteErrorKind::Validation,
+        WorkItemWriteError::Write(WriteError::CreateConflict(_)) => {
+            DesktopWriteErrorKind::CreateConflict
+        }
+        WorkItemWriteError::Write(WriteError::RevisionConflict { .. }) => {
+            DesktopWriteErrorKind::RevisionConflict
+        }
+        WorkItemWriteError::Write(WriteError::LockBusy(_)) => DesktopWriteErrorKind::LockBusy,
+        WorkItemWriteError::Read { .. }
+        | WorkItemWriteError::Parse { .. }
+        | WorkItemWriteError::Serialize { .. }
+        | WorkItemWriteError::Write(_) => DesktopWriteErrorKind::WriteFailed,
+    };
+    DesktopWriteError {
+        kind,
+        message: error.to_string(),
+    }
+}
+
+fn selected_write_root(state: &State<'_, DesktopState>) -> Result<PathBuf, DesktopWriteError> {
+    selected_root(state).map_err(DesktopWriteError::root_required)
 }
 
 #[derive(Debug, Default)]
@@ -232,6 +292,69 @@ fn get_work_item_detail(
 }
 
 #[tauri::command]
+fn get_work_item_edit_snapshot(
+    state: State<'_, DesktopState>,
+    work_item_id: String,
+) -> Result<WorkItemEditSnapshot, DesktopWriteError> {
+    read_work_item_for_edit(selected_write_root(&state)?, &work_item_id)
+        .map_err(desktop_write_error)
+}
+
+#[tauri::command]
+fn preview_create_work_item(
+    state: State<'_, DesktopState>,
+    input: WorkItemCreateInput,
+    now: String,
+) -> Result<WorkItemWritePreview, DesktopWriteError> {
+    preview_create_item(selected_write_root(&state)?, input, &now).map_err(desktop_write_error)
+}
+
+#[tauri::command]
+fn preview_update_work_item(
+    state: State<'_, DesktopState>,
+    work_item_id: String,
+    expected: WorkItemEditRevisions,
+    patch: WorkItemUpdatePatch,
+    now: String,
+) -> Result<WorkItemWritePreview, DesktopWriteError> {
+    preview_update_item(
+        selected_write_root(&state)?,
+        &work_item_id,
+        expected,
+        patch,
+        &now,
+    )
+    .map_err(desktop_write_error)
+}
+
+#[tauri::command]
+fn create_work_item(
+    state: State<'_, DesktopState>,
+    input: WorkItemCreateInput,
+    now: String,
+) -> Result<WorkItemWriteResult, DesktopWriteError> {
+    create_item(selected_write_root(&state)?, input, &now).map_err(desktop_write_error)
+}
+
+#[tauri::command]
+fn update_work_item(
+    state: State<'_, DesktopState>,
+    work_item_id: String,
+    expected: WorkItemEditRevisions,
+    patch: WorkItemUpdatePatch,
+    now: String,
+) -> Result<WorkItemWriteResult, DesktopWriteError> {
+    update_item(
+        selected_write_root(&state)?,
+        &work_item_id,
+        expected,
+        patch,
+        &now,
+    )
+    .map_err(desktop_write_error)
+}
+
+#[tauri::command]
 fn reveal_work_item(
     app: AppHandle,
     state: State<'_, DesktopState>,
@@ -286,6 +409,11 @@ pub fn run() {
             set_data_root,
             inspect_data_root,
             get_work_item_detail,
+            get_work_item_edit_snapshot,
+            preview_create_work_item,
+            preview_update_work_item,
+            create_work_item,
+            update_work_item,
             reveal_work_item,
             open_context_markdown,
             open_checkpoint_markdown
@@ -309,6 +437,18 @@ mod tests {
     use std::fs::{create_dir_all, write};
     use std::sync::mpsc::TryRecvError;
     use tempfile::Builder;
+
+    #[test]
+    fn write_conflicts_are_structured_for_the_editor() {
+        let error = desktop_write_error(WorkItemWriteError::Write(WriteError::RevisionConflict {
+            path: "work-items/AUTH-142/context.md".to_string(),
+            expected: "old".to_string(),
+            actual: Some("new".to_string()),
+        }));
+
+        assert_eq!(error.kind, DesktopWriteErrorKind::RevisionConflict);
+        assert!(error.message.contains("context.md"));
+    }
 
     #[test]
     fn event_flood_collapses_to_unique_paths() {

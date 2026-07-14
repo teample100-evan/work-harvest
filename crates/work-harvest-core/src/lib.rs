@@ -5,10 +5,12 @@ mod write;
 pub use work_items::{
     ContextFileInput, ContextGitInput, ContextVerificationInput, StoredContextFile,
     StoredContextGit, StoredContextVerification, StoredWorkItemClassification, WorkContextDocument,
-    WorkContextInput, WorkContextPatch, WorkItemClassificationInput, WorkItemCreateInput,
-    WorkItemDocument, WorkItemEditRevisions, WorkItemEditSnapshot, WorkItemPaths,
-    WorkItemUpdatePatch, WorkItemWriteError, WorkItemWriteResult, create_work_item,
-    normalize_work_item, read_work_item_for_edit, render_context, update_work_item,
+    WorkContextInput, WorkContextPatch, WorkItemChangeOperation, WorkItemClassificationInput,
+    WorkItemCreateInput, WorkItemDocument, WorkItemEditRevisions, WorkItemEditSnapshot,
+    WorkItemFileChange, WorkItemPaths, WorkItemUpdatePatch, WorkItemWriteError,
+    WorkItemWritePreview, WorkItemWriteResult, create_work_item, normalize_work_item,
+    preview_create_work_item, preview_update_work_item, read_work_item_for_edit, render_context,
+    update_work_item,
 };
 pub use write::{
     DataRootWriter, FileRevision, WriteCommit, WriteError, WriteExpectation, WriteOperation,

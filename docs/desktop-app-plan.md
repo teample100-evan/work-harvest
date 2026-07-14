@@ -378,7 +378,7 @@ Node fallback은 첫 서명 릴리스를 실제 데이터에 사용하고 Node·
 
 ### M6. UI Foundation과 화면 책임 분리
 
-상태: 진행 중 — 화면 책임 분리와 대시보드 정보 위계 완료
+상태: 진행 중 — 단계형 체크포인트 기록 흐름 완료
 
 M6는 기능 마일스톤과 분리한 UI 기반 작업이다. 기존 로컬 파일 읽기·쓰기 계약과 화면의 차분한 시각 정체성은 유지하면서, 접근성 동작과 반복 스타일을 공통 계층으로 옮긴다.
 
@@ -435,6 +435,25 @@ M6는 기능 마일스톤과 분리한 UI 기반 작업이다. 기존 로컬 파
 | 화면 구조 | controller, 업무 목록, 업무 상세, 편집기 host, 시스템 상태와 presentation utility를 독립 파일로 분리 |
 | 정보 위계 | 현재 작업 공간 → 이어갈 업무·상세 → 저장소·감시 운영 정보 순서로 재배치 |
 | 네이티브 QA | 실제 데이터에서 업무 전환·상세 갱신·System Overview 스크롤·새 업무 Dialog 연결 확인 |
+| 자동 검증 | Node 7개, Rust Core 41개, Desktop 5개와 CLI·interop 테스트, TypeScript·Vite build 통과 |
+| 산출물 | bundled CLI 포함 앱 26MB, DMG 7.6MB 유지 |
+
+세 번째 구현 묶음:
+
+- [x] 체크포인트 입력을 요약 → 결과·검증 → 근거 → Context 네 단계로 분리
+- [x] 현재 단계의 필수 입력을 통과해야 다음 단계로 진행하는 검증 적용
+- [x] 통과한 단계의 자유로운 이전·재진입과 현재 단계 안내 제공
+- [x] 마지막 단계에서 기존 5파일 preview·revision 충돌·원자적 commit 흐름 연결
+
+세 번째 묶음 검증 결과(2026-07-15):
+
+| 항목 | 결과 |
+| --- | --- |
+| 기록 흐름 | 긴 단일 폼을 네 단계로 나누고 각 단계에는 해당 입력만 표시 |
+| 입력 보호 | 요약 단계의 필수값과 최종 완료 결과, Context 현재 상태를 단계 이동 전에 브라우저 기본 검증으로 확인 |
+| 저장 안전성 | 마지막 단계에서만 기존 Rust Core 5파일 diff preview를 호출하며 writer 계약은 변경하지 않음 |
+| 접근성 | `nav`·순서 목록·현재 단계 표기와 native button을 사용하고 도달하지 않은 단계는 비활성화 |
+| 네이티브 QA | 실제 macOS 앱에서 빈 필수값 차단, 네 단계 전진·이전·도달 단계 재진입과 5파일 diff preview 확인. 저장은 실행하지 않음 |
 | 자동 검증 | Node 7개, Rust Core 41개, Desktop 5개와 CLI·interop 테스트, TypeScript·Vite build 통과 |
 | 산출물 | bundled CLI 포함 앱 26MB, DMG 7.6MB 유지 |
 
@@ -519,3 +538,4 @@ M6에서 하지 않는 작업:
 | 2026-07-14 | M5 Apple Silicon CLI sidecar·설치 앱 Skill 탐색·서명/공증 GitHub 초안 Release 파이프라인 구현 |
 | 2026-07-14 | M6 UI Foundation을 기능·배포 작업과 분리하고 Base UI·CSS 토큰·Lucide 기반 구현 원칙 확정 |
 | 2026-07-15 | M6 App controller·Dashboard feature 분리와 업무 중심 대시보드 정보 위계 적용 |
+| 2026-07-15 | M6 체크포인트 입력을 4단계 기록 흐름으로 전환하고 기존 5파일 diff 저장 안전장치 연결 |

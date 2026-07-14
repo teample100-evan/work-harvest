@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   captureCheckpoint,
   desktopWriteError,
@@ -12,6 +12,10 @@ import {
   type WorkItemStatus,
 } from "./desktop";
 import { WriteDiffReview } from "./WriteDiffReview";
+import {
+  CheckpointStepper,
+  type CheckpointStep,
+} from "./features/checkpoint/CheckpointStepper";
 import { Button } from "./ui/Button";
 import { EditorDialog } from "./ui/EditorDialog";
 
@@ -63,6 +67,15 @@ interface PendingCheckpointCommit {
   expected: WorkItemEditSnapshot["revisions"];
   now: string;
 }
+
+const checkpointSteps: CheckpointStep[] = [
+  { label: "요약", description: "범위와 진행한 작업" },
+  { label: "결과·검증", description: "결정과 확인 결과" },
+  { label: "근거", description: "커밋·파일·URL" },
+  { label: "Context", description: "다음 작업과 handoff" },
+];
+
+const finalStep = checkpointSteps.length - 1;
 
 function pad(value: number): string {
   return String(value).padStart(2, "0");
@@ -235,6 +248,9 @@ export function CheckpointEditor({ workItemId, onClose, onSaved }: CheckpointEdi
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [loadVersion, setLoadVersion] = useState(0);
+  const [activeStep, setActiveStep] = useState(0);
+  const [furthestStep, setFurthestStep] = useState(0);
+  const activeStepRef = useRef<HTMLDivElement>(null);
 
   const isDirty = draft !== null && JSON.stringify(draft) !== initialDraftJson;
 
@@ -244,6 +260,8 @@ export function CheckpointEditor({ workItemId, onClose, onSaved }: CheckpointEdi
     setError(null);
     setPreview(null);
     setPendingCommit(null);
+    setActiveStep(0);
+    setFurthestStep(0);
     getWorkItemEditSnapshot(workItemId)
       .then((nextSnapshot) => {
         if (cancelled) return;
@@ -269,9 +287,40 @@ export function CheckpointEditor({ workItemId, onClose, onSaved }: CheckpointEdi
     onClose();
   }
 
+  function validateActiveStep() {
+    const controls = activeStepRef.current?.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(
+      "input, select, textarea",
+    );
+    if (!controls) return true;
+    for (const control of controls) {
+      if (!control.checkValidity()) {
+        control.reportValidity();
+        control.focus();
+        return false;
+      }
+    }
+    return true;
+  }
+
+  function advanceStep() {
+    if (!validateActiveStep()) return;
+    const nextStep = Math.min(activeStep + 1, finalStep);
+    setActiveStep(nextStep);
+    setFurthestStep((current) => Math.max(current, nextStep));
+  }
+
+  function selectStep(step: number) {
+    if (step > activeStep && !validateActiveStep()) return;
+    setActiveStep(step);
+  }
+
   async function reviewChanges(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!draft || !snapshot) return;
+    if (activeStep < finalStep) {
+      advanceStep();
+      return;
+    }
     setError(null);
     const now = new Date().toISOString();
     try {
@@ -367,7 +416,15 @@ export function CheckpointEditor({ workItemId, onClose, onSaved }: CheckpointEdi
             />
           ) : (
             <form className="editor-form" onSubmit={reviewChanges} onChange={() => setError(null)}>
-              <section className="editor-section" aria-labelledby="checkpoint-summary-title">
+              <CheckpointStepper
+                activeStep={activeStep}
+                furthestStep={furthestStep}
+                steps={checkpointSteps}
+                onSelect={selectStep}
+              />
+              <div className="checkpoint-step-content" ref={activeStepRef}>
+              {activeStep === 0 ? (
+                <section className="editor-section" aria-labelledby="checkpoint-summary-title">
                 <div className="editor-section-heading">
                   <div>
                     <span className="eyebrow">Checkpoint</span>
@@ -450,9 +507,11 @@ export function CheckpointEditor({ workItemId, onClose, onSaved }: CheckpointEdi
                     <textarea required rows={4} value={draft.activities} placeholder="한 줄에 하나씩 입력" onChange={(event) => setDraft({ ...draft, activities: event.target.value })} />
                   </label>
                 </div>
-              </section>
+                </section>
+              ) : null}
 
-              <section className="editor-section" aria-labelledby="checkpoint-evidence-title">
+              {activeStep === 1 ? (
+                <section className="editor-section" aria-labelledby="checkpoint-evidence-title">
                 <div className="editor-section-heading">
                   <div>
                     <span className="eyebrow">Evidence</span>
@@ -527,9 +586,11 @@ export function CheckpointEditor({ workItemId, onClose, onSaved }: CheckpointEdi
                     <textarea rows={3} value={draft.nextSteps} placeholder="체크포인트와 Context에 함께 반영" onChange={(event) => setDraft({ ...draft, nextSteps: event.target.value })} />
                   </label>
                 </div>
-              </section>
+                </section>
+              ) : null}
 
-              <section className="editor-section" aria-labelledby="checkpoint-proof-title">
+              {activeStep === 2 ? (
+                <section className="editor-section" aria-labelledby="checkpoint-proof-title">
                 <div className="editor-section-heading">
                   <div>
                     <span className="eyebrow">References</span>
@@ -545,9 +606,11 @@ export function CheckpointEditor({ workItemId, onClose, onSaved }: CheckpointEdi
                   <label className="editor-field"><span>명령</span><textarea rows={2} value={draft.evidenceCommands} onChange={(event) => setDraft({ ...draft, evidenceCommands: event.target.value })} /></label>
                   <label className="editor-field"><span>URL</span><textarea rows={2} value={draft.evidenceUrls} onChange={(event) => setDraft({ ...draft, evidenceUrls: event.target.value })} /></label>
                 </div>
-              </section>
+                </section>
+              ) : null}
 
-              <section className="editor-section" aria-labelledby="checkpoint-context-title">
+              {activeStep === 3 ? (
+                <section className="editor-section" aria-labelledby="checkpoint-context-title">
                 <div className="editor-section-heading">
                   <div>
                     <span className="eyebrow">Handoff</span>
@@ -570,12 +633,27 @@ export function CheckpointEditor({ workItemId, onClose, onSaved }: CheckpointEdi
                     </select>
                   </label>
                 </div>
-              </section>
+                </section>
+              ) : null}
+              </div>
 
               <footer className="editor-footer">
-                <div className="editor-footer-copy" aria-live="polite">새 기록 2개와 현재 업무 파일 3개의 diff를 먼저 생성합니다.</div>
-                <Button size="sm" variant="ghost" onClick={requestClose}>취소</Button>
-                <Button type="submit" size="sm" variant="primary">5개 파일 변경 검토</Button>
+                <div className="editor-footer-copy" aria-live="polite">
+                  단계 {activeStep + 1}/{checkpointSteps.length} · {checkpointSteps[activeStep].description}
+                </div>
+                <Button type="button" size="sm" variant="ghost" onClick={requestClose}>취소</Button>
+                {activeStep > 0 ? (
+                  <Button type="button" size="sm" variant="ghost" onClick={() => setActiveStep((step) => step - 1)}>
+                    이전
+                  </Button>
+                ) : null}
+                {activeStep < finalStep ? (
+                  <Button type="button" size="sm" variant="primary" onClick={advanceStep}>
+                    다음 단계
+                  </Button>
+                ) : (
+                  <Button type="submit" size="sm" variant="primary">5개 파일 변경 검토</Button>
+                )}
               </footer>
             </form>
           )}

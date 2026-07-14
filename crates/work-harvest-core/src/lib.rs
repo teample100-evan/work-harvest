@@ -1,3 +1,5 @@
+mod schema;
+
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
@@ -5,6 +7,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 use walkdir::WalkDir;
+
+use schema::DocumentKind;
 
 #[derive(Debug, Error)]
 pub enum CoreError {
@@ -17,6 +21,18 @@ pub enum CoreError {
         path: String,
         source: walkdir::Error,
     },
+    #[error("Could not read data file {path}: {source}")]
+    Read {
+        path: String,
+        source: std::io::Error,
+    },
+    #[error("Could not parse JSON data file {path}: {source}")]
+    Parse {
+        path: String,
+        source: serde_json::Error,
+    },
+    #[error("Work item was not found: {0}")]
+    WorkItemNotFound(String),
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -60,6 +76,75 @@ pub struct DataRootSnapshot {
     pub work_items: Vec<WorkItemSummary>,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct WorkItemClassification {
+    pub initiative_id: Option<String>,
+    pub work_types: Vec<String>,
+    pub tags: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct ContextFile {
+    pub path: String,
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct VerificationState {
+    pub completed: Vec<String>,
+    pub pending: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct WorkContextDetail {
+    pub updated_at: String,
+    pub last_checkpoint_id: Option<String>,
+    pub current_state: String,
+    pub decisions: Vec<String>,
+    pub files: Vec<ContextFile>,
+    pub verification: VerificationState,
+    pub next_steps: Vec<String>,
+    pub risks: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct CheckpointVerification {
+    pub kind: String,
+    pub description: String,
+    pub status: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct CheckpointSummary {
+    pub id: String,
+    pub kind: String,
+    pub captured_at: String,
+    pub title: String,
+    pub summary: String,
+    pub status_after: String,
+    pub activities: Vec<String>,
+    pub outcomes: Vec<String>,
+    pub verifications: Vec<CheckpointVerification>,
+    pub blockers: Vec<String>,
+    pub next_steps: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct WorkItemDetail {
+    pub id: String,
+    pub project_id: String,
+    pub title: String,
+    pub status: String,
+    pub objective: String,
+    pub desired_outcomes: Vec<String>,
+    pub classification: WorkItemClassification,
+    pub created_at: String,
+    pub updated_at: String,
+    pub completed_at: Option<String>,
+    pub context: Option<WorkContextDetail>,
+    pub checkpoints: Vec<CheckpointSummary>,
+}
+
 fn relative_path(root: &Path, path: &Path) -> String {
     path.strip_prefix(root)
         .unwrap_or(path)
@@ -73,6 +158,33 @@ fn issue(root: &Path, path: &Path, code: &str, message: impl Into<String>) -> Da
         code: code.to_string(),
         path: relative_path(root, path),
         message: message.into(),
+    }
+}
+
+fn validate_document(
+    root: &Path,
+    path: &Path,
+    kind: DocumentKind,
+    value: &Value,
+    issues: &mut Vec<DataIssue>,
+) {
+    match schema::validate(kind, value) {
+        Ok(violations) => {
+            issues.extend(violations.into_iter().map(|violation| {
+                let location = if violation.instance_path.is_empty() {
+                    "$".to_string()
+                } else {
+                    format!("${}", violation.instance_path)
+                };
+                issue(
+                    root,
+                    path,
+                    "schema_validation",
+                    format!("{location}: {}", violation.message),
+                )
+            }));
+        }
+        Err(error) => issues.push(issue(root, path, "schema_setup_failed", error)),
     }
 }
 
@@ -147,9 +259,11 @@ fn json_files(directory: &Path) -> Result<Vec<PathBuf>, CoreError> {
 fn inspect_work_item(
     root: &Path,
     path: &Path,
+    contexts: &HashMap<PathBuf, Value>,
     issues: &mut Vec<DataIssue>,
 ) -> Option<WorkItemSummary> {
     let value = read_json(root, path, issues)?;
+    validate_document(root, path, DocumentKind::WorkItem, &value, issues);
     let id = required_string(root, path, &value, "id", issues)?;
     let project_id = required_string(root, path, &value, "project_id", issues)?;
     let title = required_string(root, path, &value, "title", issues)?;
@@ -159,17 +273,15 @@ fn inspect_work_item(
     let directory = path.parent().unwrap_or(root);
     let context_data_path = directory.join("context.json");
     let context_markdown_path = directory.join("context.md");
-    let context = if context_data_path.exists() {
-        read_json(root, &context_data_path, issues)
-    } else {
+    let context = contexts.get(&context_data_path);
+    if !context_data_path.exists() {
         issues.push(issue(
             root,
             &context_data_path,
             "missing_context_data",
             "구조화된 context.json이 없습니다.",
         ));
-        None
-    };
+    }
     if !context_markdown_path.exists() {
         issues.push(issue(
             root,
@@ -177,6 +289,24 @@ fn inspect_work_item(
             "missing_context_markdown",
             "파생 context.md가 없습니다.",
         ));
+    }
+    if let Some(context) = context {
+        if context.get("work_item_id").and_then(Value::as_str) != Some(id.as_str()) {
+            issues.push(issue(
+                root,
+                &context_data_path,
+                "context_work_item_mismatch",
+                format!("context가 업무 항목 {id}를 참조하지 않습니다."),
+            ));
+        }
+        if context.get("project_id").and_then(Value::as_str) != Some(project_id.as_str()) {
+            issues.push(issue(
+                root,
+                &context_data_path,
+                "context_project_mismatch",
+                format!("context의 프로젝트가 업무 항목 {id}와 일치하지 않습니다."),
+            ));
+        }
     }
 
     Some(WorkItemSummary {
@@ -186,15 +316,196 @@ fn inspect_work_item(
         status,
         updated_at,
         current_state: context
-            .as_ref()
             .and_then(|value| value.get("current_state"))
             .and_then(Value::as_str)
             .map(str::to_string),
         last_checkpoint_id: context
-            .as_ref()
             .and_then(|value| value.get("last_checkpoint_id"))
             .and_then(Value::as_str)
             .map(str::to_string),
+    })
+}
+
+fn string_field(value: &Value, field: &str) -> String {
+    value
+        .get(field)
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string()
+}
+
+fn optional_string_field(value: &Value, field: &str) -> Option<String> {
+    value.get(field).and_then(Value::as_str).map(str::to_string)
+}
+
+fn string_array(value: &Value, field: &str) -> Vec<String> {
+    value
+        .get(field)
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .map(str::to_string)
+        .collect()
+}
+
+fn context_detail(value: &Value) -> WorkContextDetail {
+    let files = value
+        .get("files")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|file| {
+            Some(ContextFile {
+                path: file.get("path")?.as_str()?.to_string(),
+                description: optional_string_field(file, "description"),
+            })
+        })
+        .collect();
+    let verification = value.get("verification").unwrap_or(&Value::Null);
+
+    WorkContextDetail {
+        updated_at: string_field(value, "updated_at"),
+        last_checkpoint_id: optional_string_field(value, "last_checkpoint_id"),
+        current_state: string_field(value, "current_state"),
+        decisions: string_array(value, "decisions"),
+        files,
+        verification: VerificationState {
+            completed: string_array(verification, "completed"),
+            pending: string_array(verification, "pending"),
+        },
+        next_steps: string_array(value, "next_steps"),
+        risks: string_array(value, "risks"),
+    }
+}
+
+fn checkpoint_summary(value: &Value) -> CheckpointSummary {
+    let outcomes = value
+        .get("outcomes")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|outcome| outcome.get("description")?.as_str().map(str::to_string))
+        .collect();
+    let verifications = value
+        .get("verifications")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|verification| {
+            Some(CheckpointVerification {
+                kind: verification.get("type")?.as_str()?.to_string(),
+                description: verification.get("description")?.as_str()?.to_string(),
+                status: verification.get("status")?.as_str()?.to_string(),
+            })
+        })
+        .collect();
+
+    CheckpointSummary {
+        id: string_field(value, "id"),
+        kind: string_field(value, "kind"),
+        captured_at: string_field(value, "captured_at"),
+        title: string_field(value, "title"),
+        summary: string_field(value, "summary"),
+        status_after: string_field(value, "status_after"),
+        activities: string_array(value, "activities"),
+        outcomes,
+        verifications,
+        blockers: string_array(value, "blockers"),
+        next_steps: string_array(value, "next_steps"),
+    }
+}
+
+fn read_data_json(path: &Path) -> Result<Value, CoreError> {
+    let text = fs::read_to_string(path).map_err(|source| CoreError::Read {
+        path: path.to_string_lossy().into_owned(),
+        source,
+    })?;
+    serde_json::from_str(&text).map_err(|source| CoreError::Parse {
+        path: path.to_string_lossy().into_owned(),
+        source,
+    })
+}
+
+fn is_identifier(value: &str) -> bool {
+    (2..=64).contains(&value.len())
+        && value
+            .chars()
+            .next()
+            .is_some_and(|character| character.is_ascii_alphanumeric())
+        && value.chars().all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-')
+        })
+}
+
+pub fn get_work_item_detail(
+    root: impl AsRef<Path>,
+    work_item_id: &str,
+) -> Result<WorkItemDetail, CoreError> {
+    let root = root.as_ref();
+    if !root.exists() {
+        return Err(CoreError::MissingRoot(root.to_string_lossy().into_owned()));
+    }
+    if !root.is_dir() {
+        return Err(CoreError::InvalidRoot(root.to_string_lossy().into_owned()));
+    }
+    if !is_identifier(work_item_id) {
+        return Err(CoreError::WorkItemNotFound(work_item_id.to_string()));
+    }
+
+    let work_item_path = root
+        .join("work-items")
+        .join(work_item_id)
+        .join("work-item.json");
+    if !work_item_path.is_file() {
+        return Err(CoreError::WorkItemNotFound(work_item_id.to_string()));
+    }
+    let work_item = read_data_json(&work_item_path)?;
+    if work_item.get("id").and_then(Value::as_str) != Some(work_item_id) {
+        return Err(CoreError::WorkItemNotFound(work_item_id.to_string()));
+    }
+
+    let context_path = work_item_path.with_file_name("context.json");
+    let context = if context_path.is_file() {
+        Some(context_detail(&read_data_json(&context_path)?))
+    } else {
+        None
+    };
+
+    let mut checkpoints = Vec::new();
+    for path in json_files(&root.join("records"))? {
+        let Ok(value) = read_data_json(&path) else {
+            continue;
+        };
+        if value.get("work_item_id").and_then(Value::as_str) == Some(work_item_id) {
+            checkpoints.push(checkpoint_summary(&value));
+        }
+    }
+    checkpoints.sort_by(|left, right| {
+        right
+            .captured_at
+            .cmp(&left.captured_at)
+            .then_with(|| right.id.cmp(&left.id))
+    });
+
+    let classification = work_item.get("classification").unwrap_or(&Value::Null);
+    Ok(WorkItemDetail {
+        id: string_field(&work_item, "id"),
+        project_id: string_field(&work_item, "project_id"),
+        title: string_field(&work_item, "title"),
+        status: string_field(&work_item, "status"),
+        objective: string_field(&work_item, "objective"),
+        desired_outcomes: string_array(&work_item, "desired_outcomes"),
+        classification: WorkItemClassification {
+            initiative_id: optional_string_field(classification, "initiative_id"),
+            work_types: string_array(classification, "work_types"),
+            tags: string_array(classification, "tags"),
+        },
+        created_at: string_field(&work_item, "created_at"),
+        updated_at: string_field(&work_item, "updated_at"),
+        completed_at: optional_string_field(&work_item, "completed_at"),
+        context,
+        checkpoints,
     })
 }
 
@@ -223,9 +534,17 @@ pub fn inspect_data_root(root: impl AsRef<Path>) -> Result<DataRootSnapshot, Cor
     let mut work_items = Vec::new();
     let mut work_item_ids = HashSet::new();
     let mut work_item_projects = HashMap::new();
+    let mut contexts = HashMap::new();
+
+    for path in &context_files {
+        if let Some(value) = read_json(root, path, &mut issues) {
+            validate_document(root, path, DocumentKind::WorkContext, &value, &mut issues);
+            contexts.insert(path.clone(), value);
+        }
+    }
 
     for path in &work_item_json_files {
-        if let Some(summary) = inspect_work_item(root, path, &mut issues) {
+        if let Some(summary) = inspect_work_item(root, path, &contexts, &mut issues) {
             if !work_item_ids.insert(summary.id.clone()) {
                 issues.push(issue(
                     root,
@@ -244,6 +563,7 @@ pub fn inspect_data_root(root: impl AsRef<Path>) -> Result<DataRootSnapshot, Cor
         let Some(value) = read_json(root, path, &mut issues) else {
             continue;
         };
+        validate_document(root, path, DocumentKind::Checkpoint, &value, &mut issues);
         let checkpoint_id = required_string(root, path, &value, "id", &mut issues);
         let work_item_id = required_string(root, path, &value, "work_item_id", &mut issues);
         let project_id = required_string(root, path, &value, "project_id", &mut issues);
@@ -319,39 +639,26 @@ mod tests {
 
     fn write_fixture(root: &Path) {
         let work_item_dir = root.join("work-items/AUTH-142");
-        let record_dir = root.join("records/2026/07/14");
+        let record_dir = root.join("records/2026/07/13");
         create_dir_all(&work_item_dir).unwrap();
         create_dir_all(&record_dir).unwrap();
         write(
             work_item_dir.join("work-item.json"),
-            r#"{
-              "id":"AUTH-142",
-              "project_id":"jajak-front",
-              "title":"인증 개선",
-              "status":"in_progress",
-              "updated_at":"2026-07-14T10:00:00+09:00"
-            }"#,
+            include_str!("../../../examples/work-items/AUTH-142/work-item.json"),
         )
         .unwrap();
         write(
             work_item_dir.join("context.json"),
-            r#"{
-              "current_state":"기본 경로를 구현했다.",
-              "last_checkpoint_id":"CP-20260714-001"
-            }"#,
+            include_str!("../../../examples/work-items/AUTH-142/context.json"),
         )
         .unwrap();
         write(work_item_dir.join("context.md"), "# Context\n").unwrap();
         write(
-            record_dir.join("CP-20260714-001.json"),
-            r#"{
-              "id":"CP-20260714-001",
-              "work_item_id":"AUTH-142",
-              "project_id":"jajak-front"
-            }"#,
+            record_dir.join("CP-20260713-001.json"),
+            include_str!("../../../examples/records/2026/07/13/CP-20260713-001.json"),
         )
         .unwrap();
-        write(record_dir.join("CP-20260714-001.md"), "# Checkpoint\n").unwrap();
+        write(record_dir.join("CP-20260713-001.md"), "# Checkpoint\n").unwrap();
     }
 
     #[test]
@@ -373,8 +680,56 @@ mod tests {
         assert_eq!(snapshot.work_items[0].id, "AUTH-142");
         assert_eq!(
             snapshot.work_items[0].current_state.as_deref(),
-            Some("기본 경로를 구현했다.")
+            Some(
+                "refresh token 서비스와 interceptor 연동을 완료했다. 동시 요청 테스트를 작성하는 중이다."
+            )
         );
+    }
+
+    #[test]
+    fn reports_json_schema_violations() {
+        let directory = tempdir().unwrap();
+        write_fixture(directory.path());
+        let work_item_path = directory.path().join("work-items/AUTH-142/work-item.json");
+        let mut work_item: Value = read_data_json(&work_item_path).unwrap();
+        work_item.as_object_mut().unwrap().remove("objective");
+        write(
+            &work_item_path,
+            serde_json::to_string_pretty(&work_item).unwrap(),
+        )
+        .unwrap();
+
+        let snapshot = inspect_data_root(directory.path()).unwrap();
+
+        assert!(snapshot.issues.iter().any(|issue| {
+            issue.code == "schema_validation"
+                && issue.path == "work-items/AUTH-142/work-item.json"
+                && issue.message.contains("objective")
+        }));
+    }
+
+    #[test]
+    fn returns_work_item_detail_with_checkpoint_timeline() {
+        let directory = tempdir().unwrap();
+        write_fixture(directory.path());
+
+        let detail = get_work_item_detail(directory.path(), "AUTH-142").unwrap();
+
+        assert_eq!(detail.title, "인증 시스템 개선");
+        assert_eq!(detail.context.unwrap().next_steps.len(), 3);
+        assert_eq!(detail.checkpoints.len(), 1);
+        assert_eq!(detail.checkpoints[0].id, "CP-20260713-001");
+        assert_eq!(detail.checkpoints[0].verifications[0].status, "passed");
+    }
+
+    #[test]
+    fn rejects_unsafe_work_item_identifiers() {
+        let directory = tempdir().unwrap();
+        write_fixture(directory.path());
+
+        let error = get_work_item_detail(directory.path(), "../AUTH-142").unwrap_err();
+
+        assert!(matches!(error, CoreError::WorkItemNotFound(_)));
     }
 
     #[test]

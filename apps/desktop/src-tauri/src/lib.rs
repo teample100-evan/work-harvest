@@ -3,7 +3,10 @@ use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, State};
-use work_harvest_core::{DataRootSnapshot, inspect_data_root as inspect_root};
+use work_harvest_core::{
+    DataRootSnapshot, WorkItemDetail, get_work_item_detail as get_detail,
+    inspect_data_root as inspect_root,
+};
 
 #[derive(Default)]
 struct DesktopState {
@@ -79,12 +82,30 @@ fn inspect_data_root(state: State<'_, DesktopState>) -> Result<DataRootSnapshot,
     inspect_root(root).map_err(|error| error.to_string())
 }
 
+#[tauri::command]
+fn get_work_item_detail(
+    state: State<'_, DesktopState>,
+    work_item_id: String,
+) -> Result<WorkItemDetail, String> {
+    let root = state
+        .root
+        .lock()
+        .map_err(|_| lock_error("root"))?
+        .clone()
+        .ok_or_else(|| "Choose a Work Harvest data root first".to_string())?;
+    get_detail(root, &work_item_id).map_err(|error| error.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(DesktopState::default())
-        .invoke_handler(tauri::generate_handler![set_data_root, inspect_data_root])
+        .invoke_handler(tauri::generate_handler![
+            set_data_root,
+            inspect_data_root,
+            get_work_item_detail
+        ])
         .setup(|app| {
             let window = app
                 .get_webview_window("main")

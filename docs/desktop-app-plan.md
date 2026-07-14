@@ -378,7 +378,7 @@ Node fallback은 첫 서명 릴리스를 실제 데이터에 사용하고 Node·
 
 ### M6. UI Foundation과 화면 책임 분리
 
-상태: 진행 중 — UI Foundation 첫 기반 묶음 완료
+상태: 진행 중 — 화면 책임 분리와 대시보드 정보 위계 완료
 
 M6는 기능 마일스톤과 분리한 UI 기반 작업이다. 기존 로컬 파일 읽기·쓰기 계약과 화면의 차분한 시각 정체성은 유지하면서, 접근성 동작과 반복 스타일을 공통 계층으로 옮긴다.
 
@@ -417,6 +417,26 @@ M6는 기능 마일스톤과 분리한 UI 기반 작업이다. 기존 로컬 파
 | 자동 검증 | Node 7개, Rust Core 41개, Desktop 5개와 CLI·interop 테스트, TypeScript·Vite build 통과 |
 | 네이티브 QA | 실제 macOS 앱에서 새 업무·체크포인트·성과 노트 Dialog 열기, 스크롤, 버튼과 Escape 닫기 확인 |
 | 산출물 | bundled CLI 포함 앱 26MB, DMG 7.6MB로 30MB 목표 유지 |
+
+두 번째 구현 묶음:
+
+- [x] `App.tsx`의 Tauri 이벤트·상태 동기화를 controller hook으로 분리
+- [x] 업무 목록·업무 상세·편집기 host·시스템 상태를 feature 컴포넌트로 분리
+- [x] 업무 목록과 선택 업무 상세를 첫 화면의 핵심 작업 공간으로 승격
+- [x] 데이터 수량·상시 실행·watcher 상태를 하단 System Overview로 이동
+- [x] 정상 상태의 빈 검증 패널을 숨기고 문제가 있을 때만 상세 문제 노출
+- [x] 연결 후 기본 행동을 폴더 변경이 아닌 새 업무 생성으로 변경
+
+두 번째 묶음 검증 결과(2026-07-15):
+
+| 항목 | 결과 |
+| --- | --- |
+| 책임 경계 | 707줄이던 `App.tsx`를 controller와 Dashboard를 연결하는 7줄 entry로 축소 |
+| 화면 구조 | controller, 업무 목록, 업무 상세, 편집기 host, 시스템 상태와 presentation utility를 독립 파일로 분리 |
+| 정보 위계 | 현재 작업 공간 → 이어갈 업무·상세 → 저장소·감시 운영 정보 순서로 재배치 |
+| 네이티브 QA | 실제 데이터에서 업무 전환·상세 갱신·System Overview 스크롤·새 업무 Dialog 연결 확인 |
+| 자동 검증 | Node 7개, Rust Core 41개, Desktop 5개와 CLI·interop 테스트, TypeScript·Vite build 통과 |
+| 산출물 | bundled CLI 포함 앱 26MB, DMG 7.6MB 유지 |
 
 M6에서 하지 않는 작업:
 
@@ -498,3 +518,4 @@ M6에서 하지 않는 작업:
 | 2026-07-14 | M4 native Rust CLI 7개 명령·Node 출력 호환·YAML 입력·Skill 우선 실행 구현 완료 |
 | 2026-07-14 | M5 Apple Silicon CLI sidecar·설치 앱 Skill 탐색·서명/공증 GitHub 초안 Release 파이프라인 구현 |
 | 2026-07-14 | M6 UI Foundation을 기능·배포 작업과 분리하고 Base UI·CSS 토큰·Lucide 기반 구현 원칙 확정 |
+| 2026-07-15 | M6 App controller·Dashboard feature 분리와 업무 중심 대시보드 정보 위계 적용 |

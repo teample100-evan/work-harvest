@@ -86,7 +86,7 @@ h2 {
 }
 
 .root-summary {
-  margin-bottom: 18px;
+  margin-bottom: 14px;
   border-bottom: 1px solid #d7d4ca;
   padding: 0 2px 18px;
 }
@@ -204,7 +204,6 @@ h2 {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 14px;
-  margin-bottom: 14px;
 }
 
 .metric-card,
@@ -219,8 +218,8 @@ h2 {
   display: flex;
   align-items: end;
   justify-content: space-between;
-  min-height: 112px;
-  padding: 22px;
+  min-height: 86px;
+  padding: 17px 18px;
 }
 
 .metric-card span {
@@ -230,8 +229,8 @@ h2 {
 }
 
 .metric-card strong {
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: 42px;
+  font-family: var(--font-display);
+  font-size: 32px;
   font-weight: 500;
   line-height: 0.9;
 }
@@ -241,6 +240,42 @@ h2 {
   grid-template-columns: minmax(300px, 0.72fr) minmax(0, 1.28fr);
   gap: 14px;
   align-items: start;
+}
+
+.system-overview {
+  margin-top: 22px;
+  border-top: 1px solid #d7d4ca;
+  padding-top: 20px;
+}
+
+.system-overview-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 14px;
+  padding: 0 2px;
+}
+
+.system-overview-heading > p {
+  max-width: 420px;
+  margin-bottom: 1px;
+  color: var(--color-text-muted);
+  font-size: 11px;
+  line-height: 1.5;
+  text-align: right;
+}
+
+.system-overview-grid {
+  display: grid;
+  grid-template-columns: minmax(360px, 0.9fr) minmax(420px, 1.1fr);
+  gap: 14px;
+  align-items: stretch;
+}
+
+.system-overview-grid .always-on-status {
+  min-height: 86px;
+  margin-bottom: 0;
 }
 
 .panel {
@@ -767,6 +802,10 @@ h2 {
   margin-top: 14px;
 }
 
+.watcher-status {
+  padding-top: 14px;
+}
+
 .issue {
   display: flex;
   flex-direction: column;
@@ -1225,6 +1264,7 @@ footer {
   }
 
   .workspace-grid,
+  .system-overview-grid,
   .detail-card-grid,
   .record-grid,
   .evidence-grid,
@@ -1232,6 +1272,16 @@ footer {
   .checkpoint-evidence-grid,
   .diff-columns {
     grid-template-columns: 1fr;
+  }
+
+  .system-overview-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .system-overview-heading > p {
+    text-align: left;
   }
 
   .diff-pane.after {

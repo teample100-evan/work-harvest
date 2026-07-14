@@ -1,4 +1,5 @@
 mod checkpoints;
+mod reports;
 mod schema;
 mod work_items;
 mod write;
@@ -10,6 +11,12 @@ pub use checkpoints::{
     CheckpointSourceInput, CheckpointVerificationDocument, CheckpointWorkPeriodDocument,
     CheckpointWorkPeriodInput, CheckpointWriteError, CheckpointWritePreview, CheckpointWriteResult,
     capture_checkpoint, normalize_checkpoint, preview_capture_checkpoint, render_checkpoint,
+};
+pub use reports::{
+    PerformanceNoteCheckpoint, PerformanceNoteInput, PerformanceNotePaths,
+    PerformanceNoteSourceRevision, PerformanceNoteWriteError, PerformanceNoteWritePreview,
+    PerformanceNoteWriteResult, create_performance_note, create_performance_note_from_current,
+    performance_note_markdown_path, preview_performance_note, render_performance_note,
 };
 pub use work_items::{
     ContextFileInput, ContextGitInput, ContextVerificationInput, StoredContextFile,

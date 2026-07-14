@@ -435,6 +435,36 @@ export interface CheckpointWriteResult {
   commit: WorkItemWriteResult["commit"];
 }
 
+export interface PerformanceNoteInput {
+  work_item_id: string;
+  output?: string | null;
+}
+
+export interface PerformanceNoteSourceRevision {
+  path: string;
+  revision: FileRevision;
+}
+
+export interface PerformanceNotePaths {
+  report: string;
+}
+
+export interface PerformanceNoteWritePreview {
+  work_item: WorkItemDocument;
+  checkpoint_count: number;
+  paths: PerformanceNotePaths;
+  source_revisions: PerformanceNoteSourceRevision[];
+  files: WorkItemFileChange[];
+}
+
+export interface PerformanceNoteWriteResult {
+  work_item: WorkItemDocument;
+  checkpoint_count: number;
+  paths: PerformanceNotePaths;
+  source_revisions: PerformanceNoteSourceRevision[];
+  commit: WorkItemWriteResult["commit"];
+}
+
 export type DesktopWriteErrorKind =
   | "root_required"
   | "not_found"
@@ -556,6 +586,25 @@ export function captureCheckpoint(
   });
 }
 
+export function previewPerformanceNote(input: PerformanceNoteInput, generatedAt: string) {
+  return invoke<PerformanceNoteWritePreview>("preview_performance_note", {
+    input,
+    generatedAt,
+  });
+}
+
+export function createPerformanceNote(
+  input: PerformanceNoteInput,
+  expected: PerformanceNoteSourceRevision[],
+  generatedAt: string,
+) {
+  return invoke<PerformanceNoteWriteResult>("create_performance_note", {
+    input,
+    expected,
+    generatedAt,
+  });
+}
+
 export function revealWorkItem(workItemId: string) {
   return invoke<void>("reveal_work_item", { workItemId });
 }
@@ -566,4 +615,8 @@ export function openContextMarkdown(workItemId: string) {
 
 export function openCheckpointMarkdown(checkpointId: string) {
   return invoke<void>("open_checkpoint_markdown", { checkpointId });
+}
+
+export function openPerformanceNoteMarkdown(report: string) {
+  return invoke<void>("open_performance_note_markdown", { report });
 }

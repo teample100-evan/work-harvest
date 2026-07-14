@@ -378,7 +378,9 @@ pub fn normalize_checkpoint(
     Ok((checkpoint, input.context_update))
 }
 
-fn validate_checkpoint(checkpoint: &CheckpointDocument) -> Result<(), CheckpointWriteError> {
+pub(crate) fn validate_checkpoint(
+    checkpoint: &CheckpointDocument,
+) -> Result<(), CheckpointWriteError> {
     let value =
         serde_json::to_value(checkpoint).map_err(|source| CheckpointWriteError::Serialize {
             document: "checkpoint.json",

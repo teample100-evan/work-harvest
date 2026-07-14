@@ -15,13 +15,17 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_opener::OpenerExt;
 use work_harvest_core::{
     CheckpointInput, CheckpointWriteError, CheckpointWritePreview, CheckpointWriteResult,
-    DataRootIndex, DataRootSnapshot, DataRootUpdate, WorkItemCreateInput, WorkItemDetail,
-    WorkItemEditRevisions, WorkItemEditSnapshot, WorkItemUpdatePatch, WorkItemWriteError,
-    WorkItemWritePreview, WorkItemWriteResult, WriteError,
-    capture_checkpoint as capture_checkpoint_record, checkpoint_markdown_path,
-    context_markdown_path, create_work_item as create_item, get_work_item_detail as get_detail,
+    DataRootIndex, DataRootSnapshot, DataRootUpdate, PerformanceNoteInput,
+    PerformanceNoteSourceRevision, PerformanceNoteWriteError, PerformanceNoteWritePreview,
+    PerformanceNoteWriteResult, WorkItemCreateInput, WorkItemDetail, WorkItemEditRevisions,
+    WorkItemEditSnapshot, WorkItemUpdatePatch, WorkItemWriteError, WorkItemWritePreview,
+    WorkItemWriteResult, WriteError, capture_checkpoint as capture_checkpoint_record,
+    checkpoint_markdown_path, context_markdown_path,
+    create_performance_note as create_performance_note_record, create_work_item as create_item,
+    get_work_item_detail as get_detail, performance_note_markdown_path,
     preview_capture_checkpoint as preview_checkpoint_record,
     preview_create_work_item as preview_create_item,
+    preview_performance_note as preview_performance_note_record,
     preview_update_work_item as preview_update_item, read_work_item_for_edit,
     update_work_item as update_item, work_item_directory,
 };
@@ -102,8 +106,8 @@ fn desktop_write_error(error: WorkItemWriteError) -> DesktopWriteError {
     }
 }
 
-fn desktop_checkpoint_error(error: CheckpointWriteError) -> DesktopWriteError {
-    let kind = match &error {
+fn checkpoint_error_kind(error: &CheckpointWriteError) -> DesktopWriteErrorKind {
+    match error {
         CheckpointWriteError::InvalidInput(_)
         | CheckpointWriteError::Validation { .. }
         | CheckpointWriteError::Inconsistent(_) => DesktopWriteErrorKind::Validation,
@@ -113,6 +117,28 @@ fn desktop_checkpoint_error(error: CheckpointWriteError) -> DesktopWriteError {
         | CheckpointWriteError::Read { .. }
         | CheckpointWriteError::Parse { .. }
         | CheckpointWriteError::Serialize { .. } => DesktopWriteErrorKind::WriteFailed,
+    }
+}
+
+fn desktop_checkpoint_error(error: CheckpointWriteError) -> DesktopWriteError {
+    let kind = checkpoint_error_kind(&error);
+    DesktopWriteError {
+        kind,
+        message: error.to_string(),
+    }
+}
+
+fn desktop_performance_note_error(error: PerformanceNoteWriteError) -> DesktopWriteError {
+    let kind = match &error {
+        PerformanceNoteWriteError::InvalidInput(_) | PerformanceNoteWriteError::Inconsistent(_) => {
+            DesktopWriteErrorKind::Validation
+        }
+        PerformanceNoteWriteError::WorkItem(error) => work_item_error_kind(error),
+        PerformanceNoteWriteError::Checkpoint(error) => checkpoint_error_kind(error),
+        PerformanceNoteWriteError::Write(error) => write_error_kind(error),
+        PerformanceNoteWriteError::Read { .. }
+        | PerformanceNoteWriteError::Parse { .. }
+        | PerformanceNoteWriteError::Scan(_) => DesktopWriteErrorKind::WriteFailed,
     };
     DesktopWriteError {
         kind,
@@ -404,6 +430,27 @@ fn capture_checkpoint(
 }
 
 #[tauri::command]
+fn preview_performance_note(
+    state: State<'_, DesktopState>,
+    input: PerformanceNoteInput,
+    generated_at: String,
+) -> Result<PerformanceNoteWritePreview, DesktopWriteError> {
+    preview_performance_note_record(selected_write_root(&state)?, input, &generated_at)
+        .map_err(desktop_performance_note_error)
+}
+
+#[tauri::command]
+fn create_performance_note(
+    state: State<'_, DesktopState>,
+    input: PerformanceNoteInput,
+    expected: Vec<PerformanceNoteSourceRevision>,
+    generated_at: String,
+) -> Result<PerformanceNoteWriteResult, DesktopWriteError> {
+    create_performance_note_record(selected_write_root(&state)?, input, expected, &generated_at)
+        .map_err(desktop_performance_note_error)
+}
+
+#[tauri::command]
 fn reveal_work_item(
     app: AppHandle,
     state: State<'_, DesktopState>,
@@ -442,6 +489,19 @@ fn open_checkpoint_markdown(
         .map_err(|error| format!("Could not open checkpoint Markdown: {error}"))
 }
 
+#[tauri::command]
+fn open_performance_note_markdown(
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+    report: String,
+) -> Result<(), String> {
+    let path = performance_note_markdown_path(selected_root(&state)?, &report)
+        .map_err(|error| error.to_string())?;
+    app.opener()
+        .open_path(path.to_string_lossy().into_owned(), None::<String>)
+        .map_err(|error| format!("Could not open performance note Markdown: {error}"))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -465,9 +525,12 @@ pub fn run() {
             update_work_item,
             preview_capture_checkpoint,
             capture_checkpoint,
+            preview_performance_note,
+            create_performance_note,
             reveal_work_item,
             open_context_markdown,
-            open_checkpoint_markdown
+            open_checkpoint_markdown,
+            open_performance_note_markdown
         ])
         .setup(|app| {
             always_on::install(app)?;
@@ -509,6 +572,18 @@ mod tests {
         ));
         assert_eq!(
             checkpoint_error.kind,
+            DesktopWriteErrorKind::RevisionConflict
+        );
+
+        let performance_error = desktop_performance_note_error(PerformanceNoteWriteError::Write(
+            WriteError::RevisionConflict {
+                path: "records/2026/07/14/CP-001.json".to_string(),
+                expected: "old".to_string(),
+                actual: Some("new".to_string()),
+            },
+        ));
+        assert_eq!(
+            performance_error.kind,
             DesktopWriteErrorKind::RevisionConflict
         );
     }

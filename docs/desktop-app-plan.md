@@ -1,6 +1,6 @@
 # Work Harvest 데스크톱 앱 구현 계획
 
-- 상태: M3 체크포인트 GUI 쓰기 완료, M2 하루 soak 병행
+- 상태: M3 안전한 쓰기 완료, M2 하루 soak 병행
 - 최초 작성일: 2026-07-14
 - 대상: macOS Apple Silicon
 - 관련 결정: [ADR 0001](./adr/0001-tauri-desktop-app.md), [ADR 0002](./adr/0002-recoverable-local-write-transactions.md)
@@ -206,7 +206,7 @@ WORK_HARVEST_SOAK_SECONDS=86400 cargo test -p work-harvest-desktop \
 
 ### M3. 안전한 쓰기 Core
 
-상태: 진행 중 — 안전 쓰기 기반·Node writer 잠금 호환·체크포인트 GUI 완료
+상태: 완료
 
 완료:
 
@@ -237,11 +237,11 @@ WORK_HARVEST_SOAK_SECONDS=86400 cargo test -p work-harvest-desktop \
 - Node 체크포인트 CLI의 Rust Core helper protocol 전환
 - 체크포인트 활동·결정·검증·결과·근거·Context 갱신 폼
 - 저장 전 다섯 파일 diff와 revision 충돌 후 최신 Context 복구
-
-남음:
-
-- 성과 노트 생성의 Rust Core 이전
-- 성과 노트의 GUI 생성 흐름
+- 성과 노트 렌더링의 Rust Core 이전과 Node canonical fixture 바이트 호환
+- 업무·Context·연결 체크포인트 전체 source revision을 고정하는 preview·create-only commit API
+- Node 성과 노트 CLI의 Rust Core helper protocol 전환
+- 성과 노트 저장 경로 선택, 전체 Markdown diff와 revision 충돌 복구 GUI
+- 생성한 성과 노트를 안전한 루트 내부 경로로 기본 Markdown 앱에서 열기
 
 안전 쓰기 기반 검증 결과(2026-07-14):
 
@@ -297,13 +297,24 @@ Node writer 잠금 호환 검증 결과(2026-07-14):
 | 기록 UI | 활동·결정·검증·결과·근거와 Context 갱신 입력, 다섯 파일 diff, 충돌 후 최신 Context 복구 확인 |
 | 자동·시각 검증 | Node 통합 4개·Core 35개·Desktop 5개·write helper 5개, 브라우저 기록·충돌 시나리오와 macOS release bundle 통과 |
 
+성과 노트 GUI 검증 결과(2026-07-14):
+
+| 항목 | 결과 |
+| --- | --- |
+| Node 호환 | 기존 Node 렌더러에서 고정한 13개 섹션 canonical fixture와 Rust Core 출력이 바이트 단위로 일치 |
+| 원본 고정 | 업무·Context·모든 연결 체크포인트 JSON의 정확한 source 집합과 SHA-256 revision을 preview에 포함 |
+| 충돌·무덮어쓰기 | 검토 뒤 원본 수정 또는 체크포인트 추가를 감지해 파일을 만들지 않고, 기존 보고서 경로도 덮어쓰지 않음 |
+| 생성 UI | 선택 저장 경로 또는 기본 작업일 경로, Markdown 전체 diff, 충돌 후 최신 원본 재검토와 생성 후 열기 확인 |
+| 자동·시각 검증 | Node 통합 4개·Core 40개·Desktop 5개·write helper 5개, 브라우저 생성·충돌·재검토 시나리오와 macOS release bundle 통과 |
+| macOS 산출물 | 앱 18.9MB, DMG 5.3MB로 초기 20MB 목표 유지 |
+
 완료 조건:
 
 - [x] GUI Core와 기존 Node CLI의 정규화 결과가 호환된다.
 - [x] 모든 사용자 노출 writer가 같은 advisory lock에 참여해 동시 쓰기에서 기존 기록을 덮어쓰지 않는다.
 - [x] 실패 후 변경 집합이 검증 가능한 상태로 복구된다.
 
-업무 항목과 체크포인트 GUI는 Tauri 명령과 Rust Core의 동일한 preview·commit 입력을 사용한다. GUI에서 편집하지 않는 저장소·링크·Context 파일·Git 기준점은 patch에서 생략해 보존한다. 다음 구현 단위는 성과 노트 생성·렌더링을 Rust Core로 이전하고 같은 안전 쓰기·diff 흐름으로 데스크톱 생성 화면을 연결하는 것이다.
+업무 항목, 체크포인트와 성과 노트 GUI는 Tauri 명령과 Rust Core의 동일한 preview·commit 입력을 사용한다. GUI에서 편집하지 않는 저장소·링크·Context 파일·Git 기준점은 patch에서 생략해 보존한다. M3 이후 다음 구현 단위는 이 Core를 직접 사용하는 M4 Rust CLI 통합이다.
 
 ### M4. Rust CLI 통합
 
@@ -393,3 +404,4 @@ Node writer 잠금 호환 검증 결과(2026-07-14):
 | 2026-07-14 | M3 Node CLI 전체 쓰기의 Rust helper 잠금·revision·rollback 호환 전환 |
 | 2026-07-14 | M3 Tauri 업무 항목 생성·수정 명령, 저장 전 세 파일 diff와 revision 충돌 복구 GUI 구현 |
 | 2026-07-14 | M3 체크포인트 정규화·렌더링 Core 이전, Node 호환 5파일 트랜잭션과 GUI 기록 흐름 구현 |
+| 2026-07-14 | M3 성과 노트 렌더링 Core 이전, source revision 보호·전체 diff·GUI 생성 후 열기 구현으로 안전 쓰기 완료 |

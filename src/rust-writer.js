@@ -191,3 +191,20 @@ export async function captureCheckpointOperation({
   }
   return response.checkpoint_capture;
 }
+
+export async function createPerformanceNoteOperation({
+  root,
+  input,
+  generatedAt,
+}) {
+  const response = await runHelper(root, {
+    performance_note_create: {
+      input,
+      generated_at: generatedAt,
+    },
+  });
+  if (!response.performance_note) {
+    throw new CliError("Rust write helper omitted the performance note result");
+  }
+  return response.performance_note;
+}

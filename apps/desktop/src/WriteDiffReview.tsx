@@ -7,6 +7,7 @@ interface WriteDiffReviewProps {
   status: string;
   files: WorkItemFileChange[];
   saving: boolean;
+  commitLabel?: string;
   onBack: () => void;
   onCommit: () => void;
 }
@@ -23,6 +24,7 @@ export function WriteDiffReview({
   status,
   files,
   saving,
+  commitLabel,
   onBack,
   onCommit,
 }: WriteDiffReviewProps) {
@@ -74,7 +76,7 @@ export function WriteDiffReview({
           편집으로 돌아가기
         </button>
         <button type="button" className="primary-button" onClick={onCommit} disabled={saving}>
-          {saving ? "저장 중…" : `${files.length}개 파일 저장`}
+          {saving ? "저장 중…" : (commitLabel ?? `${files.length}개 파일 저장`)}
         </button>
       </footer>
     </div>

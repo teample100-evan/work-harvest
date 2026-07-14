@@ -5,8 +5,9 @@ use std::path::PathBuf;
 use thiserror::Error;
 use work_harvest_core::{
     CheckpointInput, CheckpointWriteError, CheckpointWriteResult, DataRootWriter, IssueSeverity,
+    PerformanceNoteInput, PerformanceNoteWriteError, PerformanceNoteWriteResult,
     WorkItemEditRevisions, WriteCommit, WriteError, WriteOperation, capture_checkpoint,
-    inspect_data_root,
+    create_performance_note_from_current, inspect_data_root,
 };
 
 const PROTOCOL_VERSION: u32 = 1;
@@ -17,6 +18,7 @@ struct WriteRequest {
     root: PathBuf,
     operations: Option<Vec<ProtocolOperation>>,
     checkpoint_capture: Option<CheckpointCaptureRequest>,
+    performance_note_create: Option<PerformanceNoteCreateRequest>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -24,6 +26,12 @@ struct CheckpointCaptureRequest {
     input: CheckpointInput,
     expected: WorkItemEditRevisions,
     now: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct PerformanceNoteCreateRequest {
+    input: PerformanceNoteInput,
+    generated_at: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -48,6 +56,8 @@ struct WriteResponse {
     commit: Option<WriteCommit>,
     #[serde(skip_serializing_if = "Option::is_none")]
     checkpoint_capture: Option<CheckpointWriteResult>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    performance_note: Option<PerformanceNoteWriteResult>,
 }
 
 #[derive(Debug, Error)]
@@ -70,6 +80,8 @@ enum HelperError {
     Write(#[from] WriteError),
     #[error(transparent)]
     Checkpoint(#[from] CheckpointWriteError),
+    #[error(transparent)]
+    PerformanceNote(#[from] PerformanceNoteWriteError),
     #[error("Could not serialize write response: {0}")]
     Serialize(#[source] serde_json::Error),
     #[error("Could not write response: {0}")]
@@ -119,9 +131,13 @@ fn execute(request: WriteRequest) -> Result<WriteResponse, HelperError> {
         return Err(HelperError::ProtocolVersion(request.protocol_version));
     }
 
-    match (request.operations, request.checkpoint_capture) {
-        (Some(operations), None) => execute_operations(request.root, operations),
-        (None, Some(checkpoint)) => {
+    match (
+        request.operations,
+        request.checkpoint_capture,
+        request.performance_note_create,
+    ) {
+        (Some(operations), None, None) => execute_operations(request.root, operations),
+        (None, Some(checkpoint), None) => {
             let result = capture_checkpoint(
                 request.root,
                 checkpoint.input,
@@ -132,6 +148,20 @@ fn execute(request: WriteRequest) -> Result<WriteResponse, HelperError> {
                 protocol_version: PROTOCOL_VERSION,
                 commit: None,
                 checkpoint_capture: Some(result),
+                performance_note: None,
+            })
+        }
+        (None, None, Some(report)) => {
+            let result = create_performance_note_from_current(
+                request.root,
+                report.input,
+                &report.generated_at,
+            )?;
+            Ok(WriteResponse {
+                protocol_version: PROTOCOL_VERSION,
+                commit: None,
+                checkpoint_capture: None,
+                performance_note: Some(result),
             })
         }
         _ => Err(HelperError::InvalidRequest),
@@ -165,6 +195,7 @@ fn execute_operations(
         protocol_version: PROTOCOL_VERSION,
         commit: Some(commit),
         checkpoint_capture: None,
+        performance_note: None,
     })
 }
 
@@ -207,6 +238,7 @@ mod tests {
                 expected_sha256: None,
             }]),
             checkpoint_capture: None,
+            performance_note_create: None,
         })
         .unwrap_err();
 
@@ -234,6 +266,7 @@ mod tests {
                 expected_sha256: None,
             }]),
             checkpoint_capture: None,
+            performance_note_create: None,
         })
         .unwrap();
         assert_eq!(result.commit.unwrap().written_paths, ["reports/note.md"]);
@@ -248,6 +281,7 @@ mod tests {
                 expected_sha256: None,
             }]),
             checkpoint_capture: None,
+            performance_note_create: None,
         })
         .unwrap_err();
         assert!(matches!(

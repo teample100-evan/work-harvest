@@ -6,6 +6,7 @@ import {
   inspectDataRoot,
   openCheckpointMarkdown,
   openContextMarkdown,
+  openPerformanceNoteMarkdown,
   revealWorkItem,
   setDataRoot,
   type DataRootChange,
@@ -15,6 +16,7 @@ import {
 import { AlwaysOnStatus } from "./AlwaysOnStatus";
 import { CheckpointDetails } from "./CheckpointDetails";
 import { CheckpointEditor } from "./CheckpointEditor";
+import { PerformanceNoteEditor } from "./PerformanceNoteEditor";
 import { useSnapshotNotifications } from "./useSnapshotNotifications";
 import { WorkItemEditor } from "./WorkItemEditor";
 
@@ -31,7 +33,8 @@ interface IndexActivity {
 type EditorState =
   | { mode: "create" }
   | { mode: "edit"; workItemId: string }
-  | { mode: "checkpoint"; workItemId: string };
+  | { mode: "checkpoint"; workItemId: string }
+  | { mode: "performance-note"; workItemId: string };
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
@@ -508,6 +511,13 @@ export function App() {
                       작업 기록 추가
                     </button>
                     <button
+                      className="inline-action report-action"
+                      onClick={() => setEditor({ mode: "performance-note", workItemId: detail.id })}
+                      type="button"
+                    >
+                      성과 노트 만들기
+                    </button>
+                    <button
                       className="inline-action"
                       onClick={() => setEditor({ mode: "edit", workItemId: detail.id })}
                       type="button"
@@ -668,7 +678,16 @@ export function App() {
       )}
 
       {editor ? (
-        editor.mode === "checkpoint" ? (
+        editor.mode === "performance-note" ? (
+          <PerformanceNoteEditor
+            workItemId={editor.workItemId}
+            onClose={() => setEditor(null)}
+            onCreated={(report) => {
+              setEditor(null);
+              void runExternalAction(() => openPerformanceNoteMarkdown(report));
+            }}
+          />
+        ) : editor.mode === "checkpoint" ? (
           <CheckpointEditor
             workItemId={editor.workItemId}
             onClose={() => setEditor(null)}

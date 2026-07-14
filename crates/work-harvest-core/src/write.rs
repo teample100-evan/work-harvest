@@ -62,7 +62,7 @@ pub enum WriteError {
 }
 
 /// Stable content token captured when an editable file is read.
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct FileRevision {
     pub sha256: String,
     pub bytes: u64,
@@ -805,7 +805,7 @@ fn file_revision(path: &Path) -> Result<FileRevision, WriteError> {
     })
 }
 
-fn hash_bytes(contents: &[u8]) -> String {
+pub(crate) fn hash_bytes(contents: &[u8]) -> String {
     hex_digest(Sha256::digest(contents))
 }
 

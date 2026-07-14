@@ -112,7 +112,7 @@ pnpm check:all
 - `desktop:build`: `.app`과 DMG 생성
 - `check:all`: 기존 Node CLI, React 프론트엔드와 Rust workspace 전체 검증
 
-읽기 전용 내부 알파인 M1과 M2 상시 실행 경험 1차 구현은 완료됐다. M2의 변경 업무 단위 증분 인덱스와 장시간 안정성 검증을 마친 뒤 안전한 편집 Core로 진행한다. 구체적인 범위와 데이터 무결성 전략은 [데스크톱 앱 구현 계획](./docs/desktop-app-plan.md)과 [Tauri 도입 결정](./docs/adr/0001-tauri-desktop-app.md)에 정리되어 있다.
+읽기 전용 내부 알파인 M1과 M2 상시 실행 경험 1차 구현, 변경 업무 단위 증분 인덱스는 완료됐다. M2의 실제 24시간 watcher soak를 병행하면서 M3의 복구 가능한 쓰기 기반과 Node 호환 업무 항목 생성·수정 Core API까지 구현했다. 기존 Node CLI가 같은 advisory lock에 참여하기 전에는 GUI 쓰기를 노출하지 않는다. 구체적인 범위와 데이터 무결성 전략은 [데스크톱 앱 구현 계획](./docs/desktop-app-plan.md), [Tauri 도입 결정](./docs/adr/0001-tauri-desktop-app.md)과 [복구 가능한 쓰기 결정](./docs/adr/0002-recoverable-local-write-transactions.md)에 정리되어 있다.
 
 ## 데이터 위치
 

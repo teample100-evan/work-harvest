@@ -53,6 +53,22 @@
 
 `context.json`은 현재 상태, 유효한 결정, 주요 파일, 검증, 다음 작업과 리스크를 저장한다. `context.md`는 이 데이터를 사람이 읽을 수 있게 렌더링한다. 체크포인트의 `context_update`에서 전달된 필드만 교체하고 전달되지 않은 필드는 유지한다.
 
+## 업무 항목 생성·수정 계약
+
+업무 항목 하나는 다음 세 파일을 하나의 변경 집합으로 취급한다.
+
+```text
+work-items/<id>/work-item.json
+work-items/<id>/context.json
+work-items/<id>/context.md
+```
+
+생성은 세 경로 모두에 create-only 규칙을 적용하고, 하나라도 이미 있으면 기존 파일을 덮어쓰지 않는다. 수정은 편집 시 읽은 세 파일 각각의 SHA-256 revision을 요구한다. 한 파일이라도 사라졌거나 바뀌었으면 세 파일 전체 수정을 거부한다.
+
+수정 가능한 업무 필드는 제목, 상태, 목표, 기대 결과, 분류, 저장소와 링크다. `id`, `project_id`, `created_at`, `context_path`는 생성 후 바꾸지 않는다. 상태가 `completed`로 바뀔 때 `completed_at`을 명시하지 않으면 수정 시각을 사용하고, 완료가 아닌 상태로 바뀌면 `null`로 되돌린다. 수정할 때 업무 항목과 Context의 `updated_at`은 같은 값으로 갱신한다.
+
+Context patch는 전달된 현재 상태, 결정, 파일, 검증, 다음 작업, 리스크와 Git 기준점만 교체한다. `context.md`는 저장된 두 JSON에서 항상 다시 생성하며 수동 편집본을 원본으로 사용하지 않는다. JSON은 2칸 들여쓰기와 마지막 개행을 사용하고 중첩 저장소·링크 객체의 필드 순서를 보존해 기존 Node CLI와 불필요한 diff가 생기지 않게 한다.
+
 체크포인트 JSON도 같은 이름의 Markdown으로 렌더링한다.
 
 ```text

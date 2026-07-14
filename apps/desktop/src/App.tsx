@@ -11,7 +11,9 @@ import {
   type DataRootSnapshot,
   type WorkItemDetail,
 } from "./desktop";
+import { AlwaysOnStatus } from "./AlwaysOnStatus";
 import { CheckpointDetails } from "./CheckpointDetails";
+import { useSnapshotNotifications } from "./useSnapshotNotifications";
 
 const DATA_ROOT_KEY = "work-harvest:data-root";
 
@@ -89,32 +91,47 @@ export function App() {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const refreshTimer = useRef<number | null>(null);
+  const requestGeneration = useRef(0);
+  const {
+    enableNotifications,
+    notificationError,
+    notificationState,
+    observeSnapshot,
+  } = useSnapshotNotifications();
 
   const applyRoot = useCallback(async (root: string) => {
+    const generation = ++requestGeneration.current;
     setLoading(true);
     setError(null);
     try {
       const nextSnapshot = await setDataRoot(root);
+      if (generation !== requestGeneration.current) return;
       localStorage.setItem(DATA_ROOT_KEY, root);
+      observeSnapshot(nextSnapshot, false);
       setSnapshot(nextSnapshot);
       setLastUpdatedAt(new Date());
     } catch (nextError) {
+      if (generation !== requestGeneration.current) return;
       setError(friendlyError(nextError));
     } finally {
-      setLoading(false);
+      if (generation === requestGeneration.current) setLoading(false);
     }
-  }, []);
+  }, [observeSnapshot]);
 
   const refresh = useCallback(async () => {
+    const generation = ++requestGeneration.current;
     try {
       const nextSnapshot = await inspectDataRoot();
+      if (generation !== requestGeneration.current) return;
+      observeSnapshot(nextSnapshot, true);
       setSnapshot(nextSnapshot);
       setError(null);
       setLastUpdatedAt(new Date());
     } catch (nextError) {
+      if (generation !== requestGeneration.current) return;
       setError(friendlyError(nextError));
     }
-  }, []);
+  }, [observeSnapshot]);
 
   useEffect(() => {
     const savedRoot = localStorage.getItem(DATA_ROOT_KEY);
@@ -139,6 +156,14 @@ export function App() {
       }),
       listen<string>("data-root-watch-error", (event) => {
         setError(`파일 변경 감시에 실패했습니다: ${event.payload}`);
+      }),
+      listen<string>("tray-work-item-selected", (event) => {
+        setQuery("");
+        setStatusFilter("all");
+        setSelectedWorkItemId(event.payload);
+      }),
+      listen<string>("always-on-error", (event) => {
+        setActionError(`메뉴바 상태를 갱신하지 못했습니다: ${event.payload}`);
       }),
     ]).then((results) => {
       const stopListening = results.flatMap((result) =>
@@ -309,6 +334,12 @@ export function App() {
               {hasErrors ? `오류 ${snapshot.issues.length}개` : "전체 스키마 정상"}
             </div>
           </section>
+
+          <AlwaysOnStatus
+            notificationError={notificationError}
+            notificationState={notificationState}
+            onEnableNotifications={enableNotifications}
+          />
 
           <section className="metric-grid" aria-label="데이터 수량">
             <article className="metric-card">

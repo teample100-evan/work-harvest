@@ -76,6 +76,7 @@ pub struct DataRootSnapshot {
     pub counts: DataRootCounts,
     pub issues: Vec<DataIssue>,
     pub work_items: Vec<WorkItemSummary>,
+    pub checkpoint_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -753,6 +754,9 @@ pub fn inspect_data_root(root: impl AsRef<Path>) -> Result<DataRootSnapshot, Cor
             .then_with(|| left.code.cmp(&right.code))
     });
 
+    let mut checkpoint_ids = checkpoint_ids.into_iter().collect::<Vec<_>>();
+    checkpoint_ids.sort();
+
     Ok(DataRootSnapshot {
         root: root.to_string_lossy().into_owned(),
         counts: DataRootCounts {
@@ -762,6 +766,7 @@ pub fn inspect_data_root(root: impl AsRef<Path>) -> Result<DataRootSnapshot, Cor
         },
         issues,
         work_items,
+        checkpoint_ids,
     })
 }
 
@@ -811,6 +816,7 @@ mod tests {
             }
         );
         assert!(snapshot.issues.is_empty());
+        assert_eq!(snapshot.checkpoint_ids, ["CP-20260713-001"]);
         assert_eq!(snapshot.work_items[0].id, "AUTH-142");
         assert_eq!(
             snapshot.work_items[0].current_state.as_deref(),

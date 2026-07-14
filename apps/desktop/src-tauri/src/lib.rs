@@ -1,3 +1,5 @@
+mod always_on;
+
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -78,13 +80,23 @@ fn set_data_root(
     *state.root.lock().map_err(|_| lock_error("root"))? = Some(canonical_root);
     *state.watcher.lock().map_err(|_| lock_error("watcher"))? = Some(watcher);
 
+    if let Err(error) = always_on::update_menu(&app, &snapshot) {
+        let _ = app.emit("always-on-error", error);
+    }
     Ok(snapshot)
 }
 
 #[tauri::command]
-fn inspect_data_root(state: State<'_, DesktopState>) -> Result<DataRootSnapshot, String> {
+fn inspect_data_root(
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+) -> Result<DataRootSnapshot, String> {
     let root = selected_root(&state)?;
-    inspect_root(root).map_err(|error| error.to_string())
+    let snapshot = inspect_root(root).map_err(|error| error.to_string())?;
+    if let Err(error) = always_on::update_menu(&app, &snapshot) {
+        let _ = app.emit("always-on-error", error);
+    }
+    Ok(snapshot)
 }
 
 #[tauri::command]
@@ -139,7 +151,13 @@ fn open_checkpoint_markdown(
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(always_on::window_state_flags())
+                .build(),
+        )
         .manage(DesktopState::default())
         .invoke_handler(tauri::generate_handler![
             set_data_root,
@@ -150,12 +168,14 @@ pub fn run() {
             open_checkpoint_markdown
         ])
         .setup(|app| {
+            always_on::install(app)?;
             let window = app
                 .get_webview_window("main")
                 .ok_or("main window was not created")?;
             window.set_title("Work Harvest")?;
             Ok(())
         })
+        .on_window_event(always_on::handle_window_event)
         .run(tauri::generate_context!())
         .expect("error while running Work Harvest desktop application");
 }

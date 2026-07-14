@@ -28,6 +28,7 @@ export interface DataRootSnapshot {
   counts: DataRootCounts;
   issues: DataIssue[];
   work_items: WorkItemSummary[];
+  checkpoint_ids: string[];
 }
 
 export interface WorkItemClassification {

@@ -13,7 +13,7 @@ import {
   type WorkItemUpdatePatch,
   type WorkItemWritePreview,
 } from "./desktop";
-import { WorkItemDiffReview } from "./WorkItemDiffReview";
+import { WriteDiffReview } from "./WriteDiffReview";
 
 interface WorkItemEditorProps {
   mode: "create" | "edit";
@@ -412,8 +412,12 @@ export function WorkItemEditor({ mode, workItemId, onClose, onSaved }: WorkItemE
               편집 snapshot을 불러오는 중…
             </div>
           ) : preview ? (
-            <WorkItemDiffReview
-              preview={preview}
+            <WriteDiffReview
+              eyebrow="저장 전 검토"
+              title={preview.work_item.title}
+              identity={preview.work_item.id}
+              status={preview.work_item.status}
+              files={preview.files}
               saving={saving}
               onBack={() => {
                 setPreview(null);

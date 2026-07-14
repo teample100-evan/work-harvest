@@ -254,7 +254,7 @@ fn context_path(work_item_id: &str) -> String {
     format!("work-items/{work_item_id}/context.md")
 }
 
-fn paths(work_item_id: &str) -> WorkItemPaths {
+pub(crate) fn paths(work_item_id: &str) -> WorkItemPaths {
     let directory = format!("work-items/{work_item_id}");
     WorkItemPaths {
         work_item: format!("{directory}/work-item.json"),
@@ -271,7 +271,7 @@ fn normalize_classification(input: WorkItemClassificationInput) -> StoredWorkIte
     }
 }
 
-fn normalize_files(input: Option<Vec<ContextFileInput>>) -> Vec<StoredContextFile> {
+pub(crate) fn normalize_files(input: Option<Vec<ContextFileInput>>) -> Vec<StoredContextFile> {
     input
         .unwrap_or_default()
         .into_iter()
@@ -499,7 +499,7 @@ fn validate_schema(
     Err(WorkItemWriteError::Validation { document, details })
 }
 
-fn validate_documents(
+pub(crate) fn validate_documents(
     work_item: &WorkItemDocument,
     context: &WorkContextDocument,
 ) -> Result<(), WorkItemWriteError> {
@@ -538,7 +538,7 @@ fn validate_documents(
     Ok(())
 }
 
-fn json_bytes<T: Serialize>(
+pub(crate) fn json_bytes<T: Serialize>(
     document: &'static str,
     value: &T,
 ) -> Result<Vec<u8>, WorkItemWriteError> {
@@ -548,7 +548,7 @@ fn json_bytes<T: Serialize>(
     Ok(bytes)
 }
 
-fn json_text<T: Serialize>(
+pub(crate) fn json_text<T: Serialize>(
     document: &'static str,
     value: &T,
 ) -> Result<String, WorkItemWriteError> {
@@ -594,7 +594,7 @@ fn parse_json<T: for<'de> Deserialize<'de>>(
     })
 }
 
-fn read_snapshot_from_root(
+pub(crate) fn read_snapshot_from_root(
     root: &Path,
     work_item_id: &str,
 ) -> Result<WorkItemEditSnapshot, WorkItemWriteError> {
@@ -684,7 +684,7 @@ fn validate_written_triplet(root: &Path, work_item_id: &str) -> Result<(), Strin
         .map_err(|error| error.to_string())
 }
 
-fn revisions(
+pub(crate) fn revisions(
     writer: &DataRootWriter,
     paths: &WorkItemPaths,
 ) -> Result<WorkItemEditRevisions, WorkItemWriteError> {
@@ -791,7 +791,7 @@ pub fn preview_update_work_item(
     })
 }
 
-fn verify_revision(
+pub(crate) fn verify_revision(
     writer: &DataRootWriter,
     path: &str,
     expected: &FileRevision,

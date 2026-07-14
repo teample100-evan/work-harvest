@@ -474,6 +474,17 @@ h2 {
   background: #eaf0e7;
 }
 
+.inline-action.checkpoint-action {
+  border-color: #78957f;
+  color: #f5f8f3;
+  background: #3d6248;
+}
+
+.inline-action.checkpoint-action:hover {
+  border-color: #31543c;
+  background: #31543c;
+}
+
 .detail-objective {
   margin: 18px 0 12px;
   color: #3e4941;
@@ -895,6 +906,10 @@ h2 {
   box-shadow: 0 28px 80px rgb(14 21 16 / 32%);
 }
 
+.checkpoint-editor-dialog {
+  width: min(1100px, calc(100vw - 48px));
+}
+
 .editor-header {
   display: flex;
   align-items: center;
@@ -975,6 +990,10 @@ h2 {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
+}
+
+.checkpoint-evidence-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .editor-field {
@@ -1276,6 +1295,7 @@ footer {
   .record-grid,
   .evidence-grid,
   .editor-grid,
+  .checkpoint-evidence-grid,
   .diff-columns {
     grid-template-columns: 1fr;
   }

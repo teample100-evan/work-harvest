@@ -299,6 +299,142 @@ export interface WorkItemWriteResult {
   };
 }
 
+export type CheckpointKind = "progress" | "final" | "correction" | "backfill";
+
+export interface CheckpointSourceInput {
+  agent?: "codex" | "claude-code" | "manual" | "other";
+  surface?: "desktop" | "cli" | "ide" | "cloud" | "unknown";
+  session_ref?: string | null;
+  task_title?: string | null;
+}
+
+export interface CheckpointWorkPeriodInput {
+  start?: string | null;
+  end?: string | null;
+  precision?: "exact" | "day" | "range" | "unknown";
+  basis?: Array<"checkpoint" | "activity-event" | "transcript" | "git" | "user" | "unknown">;
+  timezone?: string;
+}
+
+export interface CheckpointDecisionInput {
+  summary: string;
+  rationale: string;
+  status: "proposed" | "accepted" | "superseded";
+}
+
+export interface CheckpointVerificationInput {
+  type: "test" | "build" | "lint" | "manual" | "measurement" | "review" | "other";
+  description: string;
+  status: "passed" | "failed" | "partial" | "not_run";
+  command: string | null;
+  evidence_refs: string[];
+}
+
+export interface CheckpointOutcomeInput {
+  description: string;
+  impact: string | null;
+  evidence_refs: string[];
+}
+
+export interface CheckpointEvidenceInput {
+  commits?: string[];
+  pull_requests?: string[];
+  issues?: string[];
+  files?: string[];
+  commands?: string[];
+  urls?: string[];
+}
+
+export interface CheckpointGitInput {
+  repository: string;
+  branch: string | null;
+  head_before: string | null;
+  head_after: string | null;
+  dirty: boolean | null;
+}
+
+export interface CheckpointContextUpdateInput {
+  current_state?: string;
+  decisions?: string[];
+  files?: Array<string | StoredContextFile>;
+  verification?: ContextVerificationInput;
+  verification_completed?: string[];
+  verification_pending?: string[];
+  next_steps?: string[];
+  risks?: string[];
+  git?: Partial<StoredContextGit>;
+}
+
+export interface CheckpointInput {
+  id?: string;
+  work_item_id: string;
+  kind?: CheckpointKind;
+  source?: CheckpointSourceInput;
+  captured_at?: string;
+  work_period?: CheckpointWorkPeriodInput;
+  title: string;
+  summary: string;
+  status_after?: WorkItemStatus;
+  activities?: string[];
+  decisions?: CheckpointDecisionInput[];
+  verifications?: CheckpointVerificationInput[];
+  outcomes?: CheckpointOutcomeInput[];
+  blockers?: string[];
+  next_steps?: string[];
+  evidence?: CheckpointEvidenceInput;
+  git?: CheckpointGitInput;
+  related_checkpoint_ids?: string[];
+  correction_of?: string | null;
+  confidentiality?: "normal" | "sensitive" | "restricted";
+  context_update?: CheckpointContextUpdateInput;
+}
+
+export interface CheckpointDocument extends Omit<CheckpointInput, "id" | "kind" | "source" | "captured_at" | "work_period" | "status_after" | "correction_of" | "context_update"> {
+  schema_version: string;
+  id: string;
+  project_id: string;
+  kind: CheckpointKind;
+  source: Required<CheckpointSourceInput>;
+  captured_at: string;
+  work_period: Required<CheckpointWorkPeriodInput>;
+  status_after: WorkItemStatus;
+  activities: string[];
+  decisions: CheckpointDecisionInput[];
+  verifications: CheckpointVerificationInput[];
+  outcomes: CheckpointOutcomeInput[];
+  blockers: string[];
+  next_steps: string[];
+  evidence: Required<CheckpointEvidenceInput>;
+  related_checkpoint_ids: string[];
+  correction_of: string | null;
+  confidentiality: "normal" | "sensitive" | "restricted";
+}
+
+export interface CheckpointPaths {
+  checkpoint: string;
+  checkpoint_markdown: string;
+  work_item: string;
+  context_data: string;
+  context: string;
+}
+
+export interface CheckpointWritePreview {
+  checkpoint: CheckpointDocument;
+  work_item: WorkItemDocument;
+  context: WorkContextDocument;
+  paths: CheckpointPaths;
+  files: WorkItemFileChange[];
+}
+
+export interface CheckpointWriteResult {
+  checkpoint: CheckpointDocument;
+  work_item: WorkItemDocument;
+  context: WorkContextDocument;
+  paths: CheckpointPaths;
+  revisions: WorkItemEditRevisions;
+  commit: WorkItemWriteResult["commit"];
+}
+
 export type DesktopWriteErrorKind =
   | "root_required"
   | "not_found"
@@ -392,6 +528,30 @@ export function updateWorkItem(
     workItemId,
     expected,
     patch,
+    now,
+  });
+}
+
+export function previewCaptureCheckpoint(
+  input: CheckpointInput,
+  expected: WorkItemEditRevisions,
+  now: string,
+) {
+  return invoke<CheckpointWritePreview>("preview_capture_checkpoint", {
+    input,
+    expected,
+    now,
+  });
+}
+
+export function captureCheckpoint(
+  input: CheckpointInput,
+  expected: WorkItemEditRevisions,
+  now: string,
+) {
+  return invoke<CheckpointWriteResult>("capture_checkpoint", {
+    input,
+    expected,
     now,
   });
 }

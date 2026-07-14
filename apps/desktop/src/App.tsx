@@ -14,6 +14,7 @@ import {
 } from "./desktop";
 import { AlwaysOnStatus } from "./AlwaysOnStatus";
 import { CheckpointDetails } from "./CheckpointDetails";
+import { CheckpointEditor } from "./CheckpointEditor";
 import { useSnapshotNotifications } from "./useSnapshotNotifications";
 import { WorkItemEditor } from "./WorkItemEditor";
 
@@ -29,7 +30,8 @@ interface IndexActivity {
 
 type EditorState =
   | { mode: "create" }
-  | { mode: "edit"; workItemId: string };
+  | { mode: "edit"; workItemId: string }
+  | { mode: "checkpoint"; workItemId: string };
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
@@ -499,6 +501,13 @@ export function App() {
 
                   <div className="detail-toolbar">
                     <button
+                      className="inline-action checkpoint-action"
+                      onClick={() => setEditor({ mode: "checkpoint", workItemId: detail.id })}
+                      type="button"
+                    >
+                      작업 기록 추가
+                    </button>
+                    <button
                       className="inline-action"
                       onClick={() => setEditor({ mode: "edit", workItemId: detail.id })}
                       type="button"
@@ -659,12 +668,20 @@ export function App() {
       )}
 
       {editor ? (
-        <WorkItemEditor
-          mode={editor.mode}
-          workItemId={editor.mode === "edit" ? editor.workItemId : undefined}
-          onClose={() => setEditor(null)}
-          onSaved={handleWorkItemSaved}
-        />
+        editor.mode === "checkpoint" ? (
+          <CheckpointEditor
+            workItemId={editor.workItemId}
+            onClose={() => setEditor(null)}
+            onSaved={handleWorkItemSaved}
+          />
+        ) : (
+          <WorkItemEditor
+            mode={editor.mode}
+            workItemId={editor.mode === "edit" ? editor.workItemId : undefined}
+            onClose={() => setEditor(null)}
+            onSaved={handleWorkItemSaved}
+          />
+        )
       ) : null}
     </main>
   );

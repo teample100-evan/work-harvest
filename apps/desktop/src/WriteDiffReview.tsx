@@ -1,34 +1,39 @@
-import type { WorkItemWritePreview } from "./desktop";
+import type { WorkItemFileChange } from "./desktop";
 
-interface WorkItemDiffReviewProps {
-  preview: WorkItemWritePreview;
+interface WriteDiffReviewProps {
+  eyebrow: string;
+  title: string;
+  identity: string;
+  status: string;
+  files: WorkItemFileChange[];
   saving: boolean;
   onBack: () => void;
   onCommit: () => void;
 }
 
 function lineCount(value: string | null): number {
-  if (!value) {
-    return 0;
-  }
-
+  if (!value) return 0;
   return value.replace(/\n$/, "").split("\n").length;
 }
 
-export function WorkItemDiffReview({
-  preview,
+export function WriteDiffReview({
+  eyebrow,
+  title,
+  identity,
+  status,
+  files,
   saving,
   onBack,
   onCommit,
-}: WorkItemDiffReviewProps) {
+}: WriteDiffReviewProps) {
   return (
     <div className="editor-review">
       <section className="editor-section review-summary" aria-labelledby="review-summary-title">
         <div>
-          <span className="eyebrow">저장 전 검토</span>
-          <h3 id="review-summary-title">{preview.work_item.title}</h3>
+          <span className="eyebrow">{eyebrow}</span>
+          <h3 id="review-summary-title">{title}</h3>
           <p>
-            <code>{preview.work_item.id}</code> · {preview.work_item.status} · 파일 {preview.files.length}개
+            <code>{identity}</code> · {status} · 파일 {files.length}개
           </p>
         </div>
         <span className="review-ready-badge">검증 완료</span>
@@ -39,10 +44,12 @@ export function WorkItemDiffReview({
       </p>
 
       <div className="diff-list">
-        {preview.files.map((file, index) => (
+        {files.map((file, index) => (
           <details className="diff-file" key={file.path} open={index === 0}>
             <summary>
-              <span className={`diff-operation ${file.operation}`}>{file.operation === "create" ? "생성" : "수정"}</span>
+              <span className={`diff-operation ${file.operation}`}>
+                {file.operation === "create" ? "생성" : "수정"}
+              </span>
               <code>{file.path}</code>
               <span className="diff-line-count">
                 {lineCount(file.before)} → {lineCount(file.after)}줄
@@ -67,7 +74,7 @@ export function WorkItemDiffReview({
           편집으로 돌아가기
         </button>
         <button type="button" className="primary-button" onClick={onCommit} disabled={saving}>
-          {saving ? "저장 중…" : `${preview.files.length}개 파일 저장`}
+          {saving ? "저장 중…" : `${files.length}개 파일 저장`}
         </button>
       </footer>
     </div>

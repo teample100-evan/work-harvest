@@ -110,12 +110,12 @@ export function replaceFileOperation(root, filePath, revision, contents) {
   };
 }
 
-export async function commitFileOperations({ root, operations }) {
+async function runHelper(root, payload) {
   const { command, args } = helperCommand();
   const request = JSON.stringify({
     protocol_version: protocolVersion,
     root: path.resolve(root),
-    operations,
+    ...payload,
   });
 
   return new Promise((resolve, reject) => {
@@ -155,7 +155,7 @@ export async function commitFileOperations({ root, operations }) {
             `Unexpected protocol version: ${response.protocol_version}`,
           );
         }
-        resolve(response.commit);
+        resolve(response);
       } catch (error) {
         reject(
           new CliError(`Invalid Rust write helper response: ${error.message}`),
@@ -167,4 +167,27 @@ export async function commitFileOperations({ root, operations }) {
     });
     child.stdin.end(request);
   });
+}
+
+export async function commitFileOperations({ root, operations }) {
+  const response = await runHelper(root, { operations });
+  if (!response.commit) {
+    throw new CliError("Rust write helper omitted the file commit result");
+  }
+  return response.commit;
+}
+
+export async function captureCheckpointOperation({
+  root,
+  input,
+  expected,
+  now,
+}) {
+  const response = await runHelper(root, {
+    checkpoint_capture: { input, expected, now },
+  });
+  if (!response.checkpoint_capture) {
+    throw new CliError("Rust write helper omitted the checkpoint result");
+  }
+  return response.checkpoint_capture;
 }

@@ -12,6 +12,8 @@ license = "MIT"
 rust-version = "1.85"
 
 [workspace.dependencies]
+chrono = { version = "0.4.45", default-features = false, features = ["std"] }
+chrono-tz = "0.10"
 fs2 = "0.4.3"
 jsonschema = { version = "0.47.0", default-features = false }
 notify = "8"

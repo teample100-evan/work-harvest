@@ -14,10 +14,13 @@ use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_opener::OpenerExt;
 use work_harvest_core::{
+    CheckpointInput, CheckpointWriteError, CheckpointWritePreview, CheckpointWriteResult,
     DataRootIndex, DataRootSnapshot, DataRootUpdate, WorkItemCreateInput, WorkItemDetail,
     WorkItemEditRevisions, WorkItemEditSnapshot, WorkItemUpdatePatch, WorkItemWriteError,
-    WorkItemWritePreview, WorkItemWriteResult, WriteError, checkpoint_markdown_path,
+    WorkItemWritePreview, WorkItemWriteResult, WriteError,
+    capture_checkpoint as capture_checkpoint_record, checkpoint_markdown_path,
     context_markdown_path, create_work_item as create_item, get_work_item_detail as get_detail,
+    preview_capture_checkpoint as preview_checkpoint_record,
     preview_create_work_item as preview_create_item,
     preview_update_work_item as preview_update_item, read_work_item_for_edit,
     update_work_item as update_item, work_item_directory,
@@ -69,23 +72,47 @@ impl DesktopWriteError {
     }
 }
 
-fn desktop_write_error(error: WorkItemWriteError) -> DesktopWriteError {
-    let kind = match &error {
+fn write_error_kind(error: &WriteError) -> DesktopWriteErrorKind {
+    match error {
+        WriteError::CreateConflict(_) => DesktopWriteErrorKind::CreateConflict,
+        WriteError::RevisionConflict { .. } => DesktopWriteErrorKind::RevisionConflict,
+        WriteError::LockBusy(_) => DesktopWriteErrorKind::LockBusy,
+        _ => DesktopWriteErrorKind::WriteFailed,
+    }
+}
+
+fn work_item_error_kind(error: &WorkItemWriteError) -> DesktopWriteErrorKind {
+    match error {
         WorkItemWriteError::WorkItemNotFound(_) => DesktopWriteErrorKind::NotFound,
         WorkItemWriteError::InvalidInput(_)
         | WorkItemWriteError::Validation { .. }
         | WorkItemWriteError::Inconsistent(_) => DesktopWriteErrorKind::Validation,
-        WorkItemWriteError::Write(WriteError::CreateConflict(_)) => {
-            DesktopWriteErrorKind::CreateConflict
-        }
-        WorkItemWriteError::Write(WriteError::RevisionConflict { .. }) => {
-            DesktopWriteErrorKind::RevisionConflict
-        }
-        WorkItemWriteError::Write(WriteError::LockBusy(_)) => DesktopWriteErrorKind::LockBusy,
+        WorkItemWriteError::Write(error) => write_error_kind(error),
         WorkItemWriteError::Read { .. }
         | WorkItemWriteError::Parse { .. }
-        | WorkItemWriteError::Serialize { .. }
-        | WorkItemWriteError::Write(_) => DesktopWriteErrorKind::WriteFailed,
+        | WorkItemWriteError::Serialize { .. } => DesktopWriteErrorKind::WriteFailed,
+    }
+}
+
+fn desktop_write_error(error: WorkItemWriteError) -> DesktopWriteError {
+    let kind = work_item_error_kind(&error);
+    DesktopWriteError {
+        kind,
+        message: error.to_string(),
+    }
+}
+
+fn desktop_checkpoint_error(error: CheckpointWriteError) -> DesktopWriteError {
+    let kind = match &error {
+        CheckpointWriteError::InvalidInput(_)
+        | CheckpointWriteError::Validation { .. }
+        | CheckpointWriteError::Inconsistent(_) => DesktopWriteErrorKind::Validation,
+        CheckpointWriteError::WorkItem(error) => work_item_error_kind(error),
+        CheckpointWriteError::Write(error) => write_error_kind(error),
+        CheckpointWriteError::Inspect(_)
+        | CheckpointWriteError::Read { .. }
+        | CheckpointWriteError::Parse { .. }
+        | CheckpointWriteError::Serialize { .. } => DesktopWriteErrorKind::WriteFailed,
     };
     DesktopWriteError {
         kind,
@@ -355,6 +382,28 @@ fn update_work_item(
 }
 
 #[tauri::command]
+fn preview_capture_checkpoint(
+    state: State<'_, DesktopState>,
+    input: CheckpointInput,
+    expected: WorkItemEditRevisions,
+    now: String,
+) -> Result<CheckpointWritePreview, DesktopWriteError> {
+    preview_checkpoint_record(selected_write_root(&state)?, input, expected, &now)
+        .map_err(desktop_checkpoint_error)
+}
+
+#[tauri::command]
+fn capture_checkpoint(
+    state: State<'_, DesktopState>,
+    input: CheckpointInput,
+    expected: WorkItemEditRevisions,
+    now: String,
+) -> Result<CheckpointWriteResult, DesktopWriteError> {
+    capture_checkpoint_record(selected_write_root(&state)?, input, expected, &now)
+        .map_err(desktop_checkpoint_error)
+}
+
+#[tauri::command]
 fn reveal_work_item(
     app: AppHandle,
     state: State<'_, DesktopState>,
@@ -414,6 +463,8 @@ pub fn run() {
             preview_update_work_item,
             create_work_item,
             update_work_item,
+            preview_capture_checkpoint,
+            capture_checkpoint,
             reveal_work_item,
             open_context_markdown,
             open_checkpoint_markdown
@@ -448,6 +499,18 @@ mod tests {
 
         assert_eq!(error.kind, DesktopWriteErrorKind::RevisionConflict);
         assert!(error.message.contains("context.md"));
+
+        let checkpoint_error = desktop_checkpoint_error(CheckpointWriteError::WorkItem(
+            WorkItemWriteError::Write(WriteError::RevisionConflict {
+                path: "work-items/AUTH-142/context.json".to_string(),
+                expected: "old".to_string(),
+                actual: Some("new".to_string()),
+            }),
+        ));
+        assert_eq!(
+            checkpoint_error.kind,
+            DesktopWriteErrorKind::RevisionConflict
+        );
     }
 
     #[test]

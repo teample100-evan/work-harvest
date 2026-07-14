@@ -4,7 +4,9 @@ use std::io::{self, Read, Write};
 use std::path::PathBuf;
 use thiserror::Error;
 use work_harvest_core::{
-    DataRootWriter, IssueSeverity, WriteCommit, WriteError, WriteOperation, inspect_data_root,
+    CheckpointInput, CheckpointWriteError, CheckpointWriteResult, DataRootWriter, IssueSeverity,
+    WorkItemEditRevisions, WriteCommit, WriteError, WriteOperation, capture_checkpoint,
+    inspect_data_root,
 };
 
 const PROTOCOL_VERSION: u32 = 1;
@@ -13,7 +15,15 @@ const PROTOCOL_VERSION: u32 = 1;
 struct WriteRequest {
     protocol_version: u32,
     root: PathBuf,
-    operations: Vec<ProtocolOperation>,
+    operations: Option<Vec<ProtocolOperation>>,
+    checkpoint_capture: Option<CheckpointCaptureRequest>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CheckpointCaptureRequest {
+    input: CheckpointInput,
+    expected: WorkItemEditRevisions,
+    now: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -34,7 +44,10 @@ enum ProtocolExpectation {
 #[derive(Debug, Serialize)]
 struct WriteResponse {
     protocol_version: u32,
-    commit: WriteCommit,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    commit: Option<WriteCommit>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    checkpoint_capture: Option<CheckpointWriteResult>,
 }
 
 #[derive(Debug, Error)]
@@ -49,10 +62,14 @@ enum HelperError {
     MissingRevision(String),
     #[error("Create operation must not include expected_sha256: {0}")]
     UnexpectedRevision(String),
+    #[error("Write-helper request must contain exactly one operation kind")]
+    InvalidRequest,
     #[error("Could not inspect data root before commit: {0}")]
     InspectBefore(String),
     #[error(transparent)]
     Write(#[from] WriteError),
+    #[error(transparent)]
+    Checkpoint(#[from] CheckpointWriteError),
     #[error("Could not serialize write response: {0}")]
     Serialize(#[source] serde_json::Error),
     #[error("Could not write response: {0}")]
@@ -102,12 +119,34 @@ fn execute(request: WriteRequest) -> Result<WriteResponse, HelperError> {
         return Err(HelperError::ProtocolVersion(request.protocol_version));
     }
 
-    let operations = request
-        .operations
+    match (request.operations, request.checkpoint_capture) {
+        (Some(operations), None) => execute_operations(request.root, operations),
+        (None, Some(checkpoint)) => {
+            let result = capture_checkpoint(
+                request.root,
+                checkpoint.input,
+                checkpoint.expected,
+                &checkpoint.now,
+            )?;
+            Ok(WriteResponse {
+                protocol_version: PROTOCOL_VERSION,
+                commit: None,
+                checkpoint_capture: Some(result),
+            })
+        }
+        _ => Err(HelperError::InvalidRequest),
+    }
+}
+
+fn execute_operations(
+    root: PathBuf,
+    operations: Vec<ProtocolOperation>,
+) -> Result<WriteResponse, HelperError> {
+    let operations = operations
         .into_iter()
         .map(protocol_operation)
         .collect::<Result<Vec<_>, _>>()?;
-    let mut writer = DataRootWriter::acquire(&request.root)?;
+    let mut writer = DataRootWriter::acquire(&root)?;
     let baseline = error_fingerprints(writer.root()).map_err(HelperError::InspectBefore)?;
     let commit = writer.commit_validated(operations, move |root| {
         let after = error_fingerprints(root)?;
@@ -124,7 +163,8 @@ fn execute(request: WriteRequest) -> Result<WriteResponse, HelperError> {
 
     Ok(WriteResponse {
         protocol_version: PROTOCOL_VERSION,
-        commit,
+        commit: Some(commit),
+        checkpoint_capture: None,
     })
 }
 
@@ -160,12 +200,13 @@ mod tests {
         let error = execute(WriteRequest {
             protocol_version: PROTOCOL_VERSION,
             root: directory.path().to_path_buf(),
-            operations: vec![ProtocolOperation {
+            operations: Some(vec![ProtocolOperation {
                 path: PathBuf::from("note.md"),
                 contents: "note\n".to_string(),
                 expectation: ProtocolExpectation::MatchSha256,
                 expected_sha256: None,
-            }],
+            }]),
+            checkpoint_capture: None,
         })
         .unwrap_err();
 
@@ -186,25 +227,27 @@ mod tests {
         let result = execute(WriteRequest {
             protocol_version: PROTOCOL_VERSION,
             root: directory.path().to_path_buf(),
-            operations: vec![ProtocolOperation {
+            operations: Some(vec![ProtocolOperation {
                 path: PathBuf::from("reports/note.md"),
                 contents: "safe report\n".to_string(),
                 expectation: ProtocolExpectation::Create,
                 expected_sha256: None,
-            }],
+            }]),
+            checkpoint_capture: None,
         })
         .unwrap();
-        assert_eq!(result.commit.written_paths, ["reports/note.md"]);
+        assert_eq!(result.commit.unwrap().written_paths, ["reports/note.md"]);
 
         let error = execute(WriteRequest {
             protocol_version: PROTOCOL_VERSION,
             root: directory.path().to_path_buf(),
-            operations: vec![ProtocolOperation {
+            operations: Some(vec![ProtocolOperation {
                 path: PathBuf::from("work-items/NEW/work-item.json"),
                 contents: "{}\n".to_string(),
                 expectation: ProtocolExpectation::Create,
                 expected_sha256: None,
-            }],
+            }]),
+            checkpoint_capture: None,
         })
         .unwrap_err();
         assert!(matches!(

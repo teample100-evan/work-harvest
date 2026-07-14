@@ -1,7 +1,16 @@
+mod checkpoints;
 mod schema;
 mod work_items;
 mod write;
 
+pub use checkpoints::{
+    CheckpointContextGitUpdate, CheckpointContextUpdate, CheckpointDecisionDocument,
+    CheckpointDocument, CheckpointEvidenceDocument, CheckpointEvidenceInput, CheckpointGitDocument,
+    CheckpointInput, CheckpointOutcomeDocument, CheckpointPaths, CheckpointSourceDocument,
+    CheckpointSourceInput, CheckpointVerificationDocument, CheckpointWorkPeriodDocument,
+    CheckpointWorkPeriodInput, CheckpointWriteError, CheckpointWritePreview, CheckpointWriteResult,
+    capture_checkpoint, normalize_checkpoint, preview_capture_checkpoint, render_checkpoint,
+};
 pub use work_items::{
     ContextFileInput, ContextGitInput, ContextVerificationInput, StoredContextFile,
     StoredContextGit, StoredContextVerification, StoredWorkItemClassification, WorkContextDocument,

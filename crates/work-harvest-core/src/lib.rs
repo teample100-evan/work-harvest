@@ -1,4 +1,10 @@
 mod schema;
+mod write;
+
+pub use write::{
+    DataRootWriter, FileRevision, WriteCommit, WriteError, WriteExpectation, WriteOperation,
+    read_file_revision,
+};
 
 use serde::Serialize;
 use serde_json::Value;

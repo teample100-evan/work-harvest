@@ -1,9 +1,9 @@
 # Work Harvest 데스크톱 앱 구현 계획
 
-- 상태: M2 증분 인덱스 완료, 하루 soak 대기
+- 상태: M3 안전 쓰기 기반 완료, M2 하루 soak 병행
 - 최초 작성일: 2026-07-14
 - 대상: macOS Apple Silicon
-- 관련 결정: [ADR 0001](./adr/0001-tauri-desktop-app.md)
+- 관련 결정: [ADR 0001](./adr/0001-tauri-desktop-app.md), [ADR 0002](./adr/0002-recoverable-local-write-transactions.md)
 
 ## 1. 목표
 
@@ -206,16 +206,38 @@ WORK_HARVEST_SOAK_SECONDS=86400 cargo test -p work-harvest-desktop \
 
 ### M3. 안전한 쓰기 Core
 
-상태: 예정
+상태: 진행 중 — 안전 쓰기 기반 완료
 
-- 데이터 루트 쓰기 잠금
-- 원자적 다중 파일 저장과 실패 복구
-- 외부 변경 해시와 충돌 감지
+완료:
+
+- 데이터 루트 단일 writer advisory lock
+- SHA-256 revision 기반 외부 변경 충돌 감지
+- create-only 무덮어쓰기와 symlink·루트 탈출 거부
+- 루트 내부 staged·backup·manifest 트랜잭션
+- 부분 적용·post-write 검증 실패 전체 rollback
+- 재시작 시 미완료 트랜잭션 자동 복구
+- 안전하게 복구할 수 없는 변경 quarantine과 후속 쓰기 차단
+
+남음:
+
 - 업무 항목 생성·수정
 - 체크포인트 작성
 - context 갱신
 - 성과 노트 생성
 - 저장 전 diff와 검증 표시
+- 기존 Node CLI의 잠금 호환 또는 Rust CLI writer 전환
+
+안전 쓰기 기반 검증 결과(2026-07-14):
+
+| 항목 | 결과 |
+| --- | --- |
+| 단일 writer | 같은 데이터 루트의 두 번째 writer가 즉시 `LockBusy`로 중단되고 첫 writer 종료 후 재획득 |
+| 무덮어쓰기·충돌 | 기존 create 대상과 stale SHA-256 교체를 거부하고 원본 보존 |
+| 부분 실패 rollback | 두 번째 연산 전 강제 실패와 post-write 검증 실패 모두 첫 파일까지 원상복구 |
+| 재시작 복구 | `applying`은 rollback하고 `committed`는 최종 대상을 유지한 채 임시 자산 정리 |
+| 보수적 격리 | 복구 대상이 다시 변경되면 원본을 건드리지 않고 quarantine 후 쓰기 차단 |
+| 경로 안전성 | 루트 탈출·내부 제어 경로·symlink 경유 쓰기 거부 |
+| 자동 검증 | Rust Core 24개·Desktop 4개·Node 통합 4개, 프론트엔드 빌드와 Clippy 통과 |
 
 완료 조건:
 
@@ -305,3 +327,4 @@ WORK_HARVEST_SOAK_SECONDS=86400 cargo test -p work-harvest-desktop \
 | 2026-07-14 | M1 체크포인트 전체 상세·Finder·Markdown·오류 복구 흐름 완료 |
 | 2026-07-14 | M2 메뉴바 상주·최근 업무·알림 opt-in·창 상태 복구 1차 구현 완료 |
 | 2026-07-14 | M2 캐시형 증분 인덱스·업무 단위 갱신·watcher soak 하네스 구현 |
+| 2026-07-14 | M3 단일 writer 잠금·revision 충돌·복구 가능한 다중 파일 트랜잭션 기반 구현 |

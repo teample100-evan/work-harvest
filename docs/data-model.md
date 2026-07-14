@@ -23,6 +23,19 @@
 
 모든 스키마는 JSON Schema Draft 2020-12를 사용한다. JSON은 검증 가능한 원본이고 Markdown은 사람이 읽는 파생 표현이다.
 
+## 내부 제어 영역
+
+`.work-harvest/`는 쓰기 잠금, 진행 중인 트랜잭션과 복구 격리를 위한 내부 디렉터리다. 업무 기록 원본이나 보고서 집계 대상이 아니며 애플리케이션을 통하지 않고 편집하지 않는다.
+
+```text
+.work-harvest/
+  write.lock
+  transactions/
+  quarantine/
+```
+
+구체적인 잠금·충돌·복구 규약은 [ADR 0002](./adr/0002-recoverable-local-write-transactions.md)를 따른다.
+
 ## 식별자
 
 - `project_id`: 제품 또는 코드베이스 경계

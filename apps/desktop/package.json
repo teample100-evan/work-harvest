@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "tauri": "tauri"
+    "build:bundle": "node ../../scripts/prepare-tauri-sidecar.mjs && pnpm build",
+    "tauri": "tauri",
+    "tauri:build": "tauri build --config src-tauri/tauri.bundle.conf.json"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.11.1",

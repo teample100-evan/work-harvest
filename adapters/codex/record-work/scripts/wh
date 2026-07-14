@@ -20,8 +20,32 @@ if [[ -n "${WORK_HARVEST_CLI_BIN:-}" ]]; then
   rust_cli="$WORK_HARVEST_CLI_BIN"
 else
   rust_cli=""
-  for candidate in "$harness_root/target/release/wh" "$harness_root/target/debug/wh"; do
-    if [[ -x "$candidate" ]]; then
+
+  if [[ -n "${WORK_HARVEST_APP_PATH:-}" ]]; then
+    app_cli="$WORK_HARVEST_APP_PATH/Contents/MacOS/wh"
+    if [[ ! -x "$app_cli" ]]; then
+      echo "Bundled Work Harvest CLI is not executable: $app_cli" >&2
+      exit 1
+    fi
+  else
+    app_cli=""
+  fi
+
+  case "$(uname -s)-$(uname -m)" in
+    Darwin-arm64) native_target="aarch64-apple-darwin" ;;
+    Darwin-x86_64) native_target="x86_64-apple-darwin" ;;
+    *) native_target="" ;;
+  esac
+
+  for candidate in \
+    "$app_cli" \
+    "$harness_root/target/release/wh" \
+    "$harness_root/target/$native_target/release/wh" \
+    "/Applications/Work Harvest.app/Contents/MacOS/wh" \
+    "$HOME/Applications/Work Harvest.app/Contents/MacOS/wh" \
+    "$HOME/.local/bin/wh" \
+    "$harness_root/target/debug/wh"; do
+    if [[ -n "$candidate" && -x "$candidate" ]]; then
       rust_cli="$candidate"
       break
     fi
@@ -29,7 +53,7 @@ else
 fi
 
 if [[ -z "$rust_cli" && ( ! -f "$harness_root/package.json" || ! -f "$harness_root/bin/wh.js" ) ]]; then
-  echo "Work Harvest CLI not found. Set WORK_HARVEST_CLI_BIN or WORK_HARVEST_CLI_HOME." >&2
+  echo "Work Harvest CLI not found. Install Work Harvest.app or set WORK_HARVEST_CLI_BIN or WORK_HARVEST_CLI_HOME." >&2
   exit 1
 fi
 

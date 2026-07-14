@@ -1,6 +1,6 @@
 # Work Harvest 데스크톱 앱 구현 계획
 
-- 상태: M4 Rust CLI 통합 완료, M2 하루 soak 병행
+- 상태: M5 직접 배포 기반 구현, M2 하루 soak 병행
 - 최초 작성일: 2026-07-14
 - 대상: macOS Apple Silicon
 - 관련 결정: [ADR 0001](./adr/0001-tauri-desktop-app.md), [ADR 0002](./adr/0002-recoverable-local-write-transactions.md)
@@ -28,7 +28,7 @@ Work Harvest의 로컬 파일 데이터를 안전하게 탐색하고, Codex나 C
 
 | 항목 | 목표 |
 | --- | --- |
-| 개발 빌드가 아닌 배포 앱 크기 | 20MB 이하 |
+| 개발 빌드가 아닌 배포 앱 크기 | GUI 단독 20MB 이하, bundled CLI 포함 30MB 이하 |
 | 유휴 상태 메모리 | 100MB 이하 권장, 150MB 재검토선 |
 | 외부 파일 변경 반영 | 1초 이내 |
 | 1,000개 업무·10,000개 체크포인트 초기 표시 | 2초 이내 |
@@ -348,16 +348,33 @@ Node 구현은 서명된 Rust CLI 직접 배포와 실사용 안정성을 확인
 
 ### M5. 직접 배포
 
-상태: 예정
+상태: 진행 중 — Apple Silicon 번들·릴리스 파이프라인 완료
 
-- 앱 아이콘과 번들 식별자 확정
-- Developer ID 서명과 Apple 공증
-- DMG 생성
-- Apple Silicon `wh` 바이너리와 앱을 같은 GitHub Release에 게시
-- 서명된 자동 업데이트
-- GitHub Releases 배포
-- 배포된 native CLI 안정화 후 Node fallback 제거
-- 필요하면 Universal binary 추가
+- [x] 앱 아이콘과 `dev.workharvest.desktop` 번들 식별자 고정
+- [x] Tauri target-triple 규칙으로 Apple Silicon `wh` sidecar 준비
+- [x] 앱의 `Contents/MacOS/wh`에 native CLI 동봉
+- [x] bundled CLI 실행·예제 검증·서명 정보를 확인하는 패키지 검사
+- [x] 설치 앱의 bundled CLI를 찾는 Codex Skill 래퍼
+- [x] 버전 태그와 5개 패키지 버전 일치 사전 검사
+- [x] Developer ID 인증서 import, CLI·앱 서명과 Apple 공증을 수행하는 GitHub Actions
+- [x] DMG와 서명된 Apple Silicon CLI tarball·SHA-256을 같은 GitHub 초안 Release에 게시
+- [ ] 실제 Developer ID 비밀값을 등록하고 첫 서명·공증 Release 발행
+- [ ] Tauri updater 서명 키를 발급하고 서명된 자동 업데이트 연결
+- [ ] 배포된 native CLI 안정화 확인 후 Node fallback 제거
+- [ ] 필요하면 Universal binary 추가
+
+로컬 검증 결과(2026-07-14):
+
+| 항목 | 결과 |
+| --- | --- |
+| sidecar 준비 | `aarch64-apple-darwin` release CLI를 Tauri 규칙의 `wh-aarch64-apple-darwin`으로 복사하고 실행 권한 유지 |
+| 앱 내 CLI | `Contents/MacOS/wh`가 ARM64 Mach-O이며 `--help`와 예제 `validate` 성공 |
+| Skill 배포 경로 | checkout이 없는 조건에서 `WORK_HARVEST_APP_PATH`의 bundled CLI로 `validate` 성공 |
+| macOS 산출물 | bundled CLI 포함 앱 26MB, DMG 7.6MB, CLI 7.5MB |
+| 자동 검증 | Node 테스트 7개 중 sidecar 명명·복사·release 버전 검사 3개 추가 |
+| 실제 배포 | 워크플로는 준비됐으나 Apple·updater 비밀키가 없어 아직 실행하지 않음 |
+
+Node fallback은 첫 서명 릴리스를 실제 데이터에 사용하고 Node·Rust read-only 비교와 Skill bundled CLI 경로가 모두 통과한 뒤 별도 변경으로 제거한다. 자동 업데이트는 Apple 코드 서명과 별개의 Tauri updater 개인키를 저장소 밖에서 발급해야 하므로 첫 서명 릴리스와 분리한다. 상세 절차와 필수 secret은 [macOS 배포](./distribution.md)에 기록한다.
 
 ## 6. 데이터 무결성 전략
 
@@ -423,3 +440,4 @@ Node 구현은 서명된 Rust CLI 직접 배포와 실사용 안정성을 확인
 | 2026-07-14 | M3 체크포인트 정규화·렌더링 Core 이전, Node 호환 5파일 트랜잭션과 GUI 기록 흐름 구현 |
 | 2026-07-14 | M3 성과 노트 렌더링 Core 이전, source revision 보호·전체 diff·GUI 생성 후 열기 구현으로 안전 쓰기 완료 |
 | 2026-07-14 | M4 native Rust CLI 7개 명령·Node 출력 호환·YAML 입력·Skill 우선 실행 구현 완료 |
+| 2026-07-14 | M5 Apple Silicon CLI sidecar·설치 앱 Skill 탐색·서명/공증 GitHub 초안 Release 파이프라인 구현 |

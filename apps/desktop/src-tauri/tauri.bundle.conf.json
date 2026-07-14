@@ -1,0 +1,15 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "build": {
+    "beforeBuildCommand": "pnpm build:bundle"
+  },
+  "bundle": {
+    "category": "Productivity",
+    "shortDescription": "Local work records and performance notes",
+    "longDescription": "Capture, review, and report local work records without sending them to a hosted service.",
+    "externalBin": ["binaries/wh"],
+    "macOS": {
+      "minimumSystemVersion": "12.0"
+    }
+  }
+}

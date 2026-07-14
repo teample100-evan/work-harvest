@@ -31,6 +31,20 @@ export interface DataRootSnapshot {
   checkpoint_ids: string[];
 }
 
+export interface DataRootUpdate {
+  snapshot: DataRootSnapshot;
+  changed_work_item_ids: string[];
+  full_rescan: boolean;
+  reloaded_files: number;
+  revision: number;
+  applied: boolean;
+}
+
+export interface DataRootChange extends DataRootUpdate {
+  paths: string[];
+  event_count: number;
+}
+
 export interface WorkItemClassification {
   initiative_id: string | null;
   work_types: string[];
@@ -127,7 +141,7 @@ export function setDataRoot(root: string) {
 }
 
 export function inspectDataRoot() {
-  return invoke<DataRootSnapshot>("inspect_data_root");
+  return invoke<DataRootUpdate>("inspect_data_root");
 }
 
 export function getWorkItemDetail(workItemId: string) {

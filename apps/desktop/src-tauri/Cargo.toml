@@ -22,3 +22,7 @@ tauri-plugin-notification.workspace = true
 tauri-plugin-opener.workspace = true
 tauri-plugin-window-state.workspace = true
 work-harvest-core = { path = "../../../crates/work-harvest-core" }
+
+[dev-dependencies]
+serde_json.workspace = true
+tempfile.workspace = true

@@ -8,6 +8,7 @@ import {
   openContextMarkdown,
   revealWorkItem,
   setDataRoot,
+  type DataRootChange,
   type DataRootSnapshot,
   type WorkItemDetail,
 } from "./desktop";
@@ -16,6 +17,14 @@ import { CheckpointDetails } from "./CheckpointDetails";
 import { useSnapshotNotifications } from "./useSnapshotNotifications";
 
 const DATA_ROOT_KEY = "work-harvest:data-root";
+
+interface IndexActivity {
+  revision: number;
+  reloadedFiles: number;
+  eventCount: number | null;
+  pathCount: number | null;
+  fullRescan: boolean;
+}
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
@@ -90,7 +99,9 @@ export function App() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
-  const refreshTimer = useRef<number | null>(null);
+  const [detailRevision, setDetailRevision] = useState(0);
+  const [indexActivity, setIndexActivity] = useState<IndexActivity | null>(null);
+  const selectedWorkItemIdRef = useRef<string | null>(null);
   const requestGeneration = useRef(0);
   const {
     enableNotifications,
@@ -110,6 +121,17 @@ export function App() {
       observeSnapshot(nextSnapshot, false);
       setSnapshot(nextSnapshot);
       setLastUpdatedAt(new Date());
+      setDetailRevision((revision) => revision + 1);
+      setIndexActivity({
+        revision: 1,
+        reloadedFiles:
+          nextSnapshot.counts.work_items +
+          nextSnapshot.counts.contexts +
+          nextSnapshot.counts.checkpoints,
+        eventCount: null,
+        pathCount: null,
+        fullRescan: true,
+      });
     } catch (nextError) {
       if (generation !== requestGeneration.current) return;
       setError(friendlyError(nextError));
@@ -121,12 +143,21 @@ export function App() {
   const refresh = useCallback(async () => {
     const generation = ++requestGeneration.current;
     try {
-      const nextSnapshot = await inspectDataRoot();
+      const update = await inspectDataRoot();
       if (generation !== requestGeneration.current) return;
+      const nextSnapshot = update.snapshot;
       observeSnapshot(nextSnapshot, true);
       setSnapshot(nextSnapshot);
       setError(null);
       setLastUpdatedAt(new Date());
+      setDetailRevision((revision) => revision + 1);
+      setIndexActivity({
+        revision: update.revision,
+        reloadedFiles: update.reloaded_files,
+        eventCount: null,
+        pathCount: null,
+        fullRescan: update.full_rescan,
+      });
     } catch (nextError) {
       if (generation !== requestGeneration.current) return;
       setError(friendlyError(nextError));
@@ -143,16 +174,33 @@ export function App() {
   }, [applyRoot]);
 
   useEffect(() => {
+    selectedWorkItemIdRef.current = selectedWorkItemId;
+  }, [selectedWorkItemId]);
+
+  useEffect(() => {
     let disposed = false;
     let unlisten: Array<() => void> = [];
     void Promise.allSettled([
-      listen("data-root-changed", () => {
-        if (refreshTimer.current !== null) {
-          window.clearTimeout(refreshTimer.current);
+      listen<DataRootChange>("data-root-updated", (event) => {
+        const update = event.payload;
+        observeSnapshot(update.snapshot, true);
+        setSnapshot(update.snapshot);
+        setError(null);
+        setLastUpdatedAt(new Date());
+        setIndexActivity({
+          revision: update.revision,
+          reloadedFiles: update.reloaded_files,
+          eventCount: update.event_count,
+          pathCount: update.paths.length,
+          fullRescan: update.full_rescan,
+        });
+        const selectedId = selectedWorkItemIdRef.current;
+        if (
+          update.full_rescan ||
+          (selectedId !== null && update.changed_work_item_ids.includes(selectedId))
+        ) {
+          setDetailRevision((revision) => revision + 1);
         }
-        refreshTimer.current = window.setTimeout(() => {
-          void refresh();
-        }, 350);
       }),
       listen<string>("data-root-watch-error", (event) => {
         setError(`파일 변경 감시에 실패했습니다: ${event.payload}`);
@@ -183,11 +231,8 @@ export function App() {
     return () => {
       disposed = true;
       unlisten.forEach((stop) => stop());
-      if (refreshTimer.current !== null) {
-        window.clearTimeout(refreshTimer.current);
-      }
     };
-  }, [refresh]);
+  }, [observeSnapshot]);
 
   useEffect(() => {
     if (!snapshot || snapshot.work_items.length === 0) {
@@ -225,7 +270,7 @@ export function App() {
     return () => {
       disposed = true;
     };
-  }, [lastUpdatedAt, selectedWorkItemId]);
+  }, [detailRevision, selectedWorkItemId]);
 
   const statusOptions = useMemo(
     () => [...new Set(snapshot?.work_items.map((item) => item.status) ?? [])].sort(),
@@ -575,6 +620,14 @@ export function App() {
           <footer>
             외부 파일 변경을 감시하고 있습니다.
             {lastUpdatedAt && ` 마지막 확인 ${lastUpdatedAt.toLocaleTimeString("ko-KR")}`}
+            {indexActivity &&
+              ` · 인덱스 r${indexActivity.revision} · ${
+                indexActivity.fullRescan ? "전체" : "증분"
+              } 검사 · JSON ${indexActivity.reloadedFiles}개${
+                indexActivity.eventCount === null
+                  ? ""
+                  : ` · 이벤트 ${indexActivity.eventCount}건 → 경로 ${indexActivity.pathCount}개`
+              }`}
           </footer>
         </>
       )}

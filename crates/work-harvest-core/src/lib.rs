@@ -2,7 +2,7 @@ mod schema;
 
 use serde::Serialize;
 use serde_json::Value;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
@@ -77,6 +77,30 @@ pub struct DataRootSnapshot {
     pub issues: Vec<DataIssue>,
     pub work_items: Vec<WorkItemSummary>,
     pub checkpoint_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct DataRootUpdate {
+    pub snapshot: DataRootSnapshot,
+    pub changed_work_item_ids: Vec<String>,
+    pub full_rescan: bool,
+    pub reloaded_files: usize,
+    pub revision: u64,
+    pub applied: bool,
+}
+
+#[derive(Debug, Clone)]
+struct IndexedDocument {
+    value: Option<Value>,
+    issues: Vec<DataIssue>,
+}
+
+#[derive(Debug, Clone)]
+pub struct DataRootIndex {
+    root: PathBuf,
+    documents: HashMap<PathBuf, IndexedDocument>,
+    snapshot: DataRootSnapshot,
+    revision: u64,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -294,16 +318,16 @@ fn json_files(directory: &Path) -> Result<Vec<PathBuf>, CoreError> {
 fn inspect_work_item(
     root: &Path,
     path: &Path,
+    value: &Value,
     contexts: &HashMap<PathBuf, Value>,
     issues: &mut Vec<DataIssue>,
 ) -> Option<WorkItemSummary> {
-    let value = read_json(root, path, issues)?;
-    validate_document(root, path, DocumentKind::WorkItem, &value, issues);
-    let id = required_string(root, path, &value, "id", issues)?;
-    let project_id = required_string(root, path, &value, "project_id", issues)?;
-    let title = required_string(root, path, &value, "title", issues)?;
-    let status = required_string(root, path, &value, "status", issues)?;
-    let updated_at = required_string(root, path, &value, "updated_at", issues)?;
+    validate_document(root, path, DocumentKind::WorkItem, value, issues);
+    let id = required_string(root, path, value, "id", issues)?;
+    let project_id = required_string(root, path, value, "project_id", issues)?;
+    let title = required_string(root, path, value, "title", issues)?;
+    let status = required_string(root, path, value, "status", issues)?;
+    let updated_at = required_string(root, path, value, "updated_at", issues)?;
 
     let directory = path.parent().unwrap_or(root);
     let context_data_path = directory.join("context.json");
@@ -644,130 +668,412 @@ pub fn get_work_item_detail(
     })
 }
 
-pub fn inspect_data_root(root: impl AsRef<Path>) -> Result<DataRootSnapshot, CoreError> {
-    let root = root.as_ref();
-    if !root.exists() {
-        return Err(CoreError::MissingRoot(root.to_string_lossy().into_owned()));
-    }
-    if !root.is_dir() {
-        return Err(CoreError::InvalidRoot(root.to_string_lossy().into_owned()));
-    }
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum IndexedDocumentKind {
+    WorkItem,
+    Context,
+    Checkpoint,
+}
 
-    let work_data_files = json_files(&root.join("work-items"))?;
-    let work_item_json_files = work_data_files
-        .iter()
-        .filter(|path| path.file_name().and_then(|value| value.to_str()) == Some("work-item.json"))
-        .cloned()
-        .collect::<Vec<_>>();
-    let context_files = work_data_files
-        .into_iter()
-        .filter(|path| path.file_name().and_then(|value| value.to_str()) == Some("context.json"))
-        .collect::<Vec<_>>();
-    let checkpoint_files = json_files(&root.join("records"))?;
-
-    let mut issues = Vec::new();
-    let mut work_items = Vec::new();
-    let mut work_item_ids = HashSet::new();
-    let mut work_item_projects = HashMap::new();
-    let mut contexts = HashMap::new();
-
-    for path in &context_files {
-        if let Some(value) = read_json(root, path, &mut issues) {
-            validate_document(root, path, DocumentKind::WorkContext, &value, &mut issues);
-            contexts.insert(path.clone(), value);
-        }
-    }
-
-    for path in &work_item_json_files {
-        if let Some(summary) = inspect_work_item(root, path, &contexts, &mut issues) {
-            if !work_item_ids.insert(summary.id.clone()) {
-                issues.push(issue(
-                    root,
-                    path,
-                    "duplicate_work_item_id",
-                    format!("중복 업무 항목 ID입니다: {}", summary.id),
-                ));
-            }
-            work_item_projects.insert(summary.id.clone(), summary.project_id.clone());
-            work_items.push(summary);
-        }
-    }
-
-    let mut checkpoint_ids = HashSet::new();
-    for path in &checkpoint_files {
-        let Some(value) = read_json(root, path, &mut issues) else {
-            continue;
+fn indexed_document_kind(root: &Path, path: &Path) -> Option<IndexedDocumentKind> {
+    let relative = path.strip_prefix(root).ok()?;
+    let file_name = path.file_name()?.to_str()?;
+    if relative.starts_with("work-items") {
+        return match file_name {
+            "work-item.json" => Some(IndexedDocumentKind::WorkItem),
+            "context.json" => Some(IndexedDocumentKind::Context),
+            _ => None,
         };
-        validate_document(root, path, DocumentKind::Checkpoint, &value, &mut issues);
-        let checkpoint_id = required_string(root, path, &value, "id", &mut issues);
-        let work_item_id = required_string(root, path, &value, "work_item_id", &mut issues);
-        let project_id = required_string(root, path, &value, "project_id", &mut issues);
-        if let Some(checkpoint_id) = checkpoint_id {
-            if !checkpoint_ids.insert(checkpoint_id.clone()) {
-                issues.push(issue(
-                    root,
-                    path,
-                    "duplicate_checkpoint_id",
-                    format!("중복 체크포인트 ID입니다: {checkpoint_id}"),
-                ));
+    }
+    if relative.starts_with("records")
+        && path.extension().and_then(|extension| extension.to_str()) == Some("json")
+    {
+        return Some(IndexedDocumentKind::Checkpoint);
+    }
+    None
+}
+
+fn indexed_document_paths(root: &Path) -> Result<Vec<PathBuf>, CoreError> {
+    let mut paths = json_files(&root.join("work-items"))?
+        .into_iter()
+        .filter(|path| indexed_document_kind(root, path).is_some())
+        .collect::<Vec<_>>();
+    paths.extend(json_files(&root.join("records"))?);
+    paths.sort();
+    Ok(paths)
+}
+
+fn load_indexed_document(root: &Path, path: &Path) -> IndexedDocument {
+    let mut issues = Vec::new();
+    let value = read_json(root, path, &mut issues);
+    IndexedDocument { value, issues }
+}
+
+impl DataRootIndex {
+    pub fn build(root: impl AsRef<Path>) -> Result<Self, CoreError> {
+        let root = root.as_ref();
+        validate_data_root(root)?;
+        let root = root.to_path_buf();
+        let mut documents = HashMap::new();
+        for path in indexed_document_paths(&root)? {
+            documents.insert(path.clone(), load_indexed_document(&root, &path));
+        }
+        let mut index = Self {
+            snapshot: DataRootSnapshot {
+                root: root.to_string_lossy().into_owned(),
+                counts: DataRootCounts {
+                    work_items: 0,
+                    contexts: 0,
+                    checkpoints: 0,
+                },
+                issues: Vec::new(),
+                work_items: Vec::new(),
+                checkpoint_ids: Vec::new(),
+            },
+            root,
+            documents,
+            revision: 1,
+        };
+        index.snapshot = index.rebuild_snapshot();
+        Ok(index)
+    }
+
+    pub fn snapshot(&self) -> &DataRootSnapshot {
+        &self.snapshot
+    }
+
+    pub fn revision(&self) -> u64 {
+        self.revision
+    }
+
+    pub fn refresh_all(&mut self) -> Result<DataRootUpdate, CoreError> {
+        validate_data_root(&self.root)?;
+        let mut changed_work_item_ids = self.all_work_item_ids();
+        let paths = indexed_document_paths(&self.root)?;
+        self.documents = paths
+            .iter()
+            .map(|path| (path.clone(), load_indexed_document(&self.root, path)))
+            .collect();
+        changed_work_item_ids.extend(self.all_work_item_ids());
+        self.snapshot = self.rebuild_snapshot();
+        self.revision += 1;
+        Ok(DataRootUpdate {
+            snapshot: self.snapshot.clone(),
+            changed_work_item_ids: changed_work_item_ids.into_iter().collect(),
+            full_rescan: true,
+            reloaded_files: paths.len(),
+            revision: self.revision,
+            applied: true,
+        })
+    }
+
+    pub fn refresh_paths(&mut self, paths: &[PathBuf]) -> Result<DataRootUpdate, CoreError> {
+        let normalized_paths = paths
+            .iter()
+            .map(|path| {
+                if path.is_absolute() {
+                    path.clone()
+                } else {
+                    self.root.join(path)
+                }
+            })
+            .filter(|path| path.starts_with(&self.root))
+            .collect::<BTreeSet<_>>();
+        let mut changed_work_item_ids = BTreeSet::new();
+        let mut reload_paths = BTreeSet::new();
+        let mut relevant = false;
+        let mut full_rescan = false;
+
+        for path in &normalized_paths {
+            if self.requires_full_rescan(path) {
+                relevant = true;
+                full_rescan = true;
+                break;
+            }
+            if indexed_document_kind(&self.root, path).is_some() {
+                relevant = true;
+                if let Some(work_item_id) = self.work_item_id_for_path(path) {
+                    changed_work_item_ids.insert(work_item_id);
+                }
+                reload_paths.insert(path.clone());
+            } else if self.is_related_markdown(path) {
+                relevant = true;
+                if let Some(work_item_id) = self.work_item_id_for_path(path) {
+                    changed_work_item_ids.insert(work_item_id);
+                }
             }
         }
-        if let Some(work_item_id) = work_item_id {
-            match work_item_projects.get(&work_item_id) {
-                None => issues.push(issue(
-                    root,
+
+        if !relevant {
+            return Ok(DataRootUpdate {
+                snapshot: self.snapshot.clone(),
+                changed_work_item_ids: Vec::new(),
+                full_rescan: false,
+                reloaded_files: 0,
+                revision: self.revision,
+                applied: false,
+            });
+        }
+        if full_rescan {
+            return self.refresh_all();
+        }
+
+        for path in &reload_paths {
+            self.documents.remove(path);
+            if path.is_file() {
+                self.documents
+                    .insert(path.clone(), load_indexed_document(&self.root, path));
+            }
+        }
+        for path in &normalized_paths {
+            if let Some(work_item_id) = self.work_item_id_for_path(path) {
+                changed_work_item_ids.insert(work_item_id);
+            }
+        }
+        self.snapshot = self.rebuild_snapshot();
+        self.revision += 1;
+        Ok(DataRootUpdate {
+            snapshot: self.snapshot.clone(),
+            changed_work_item_ids: changed_work_item_ids.into_iter().collect(),
+            full_rescan: false,
+            reloaded_files: reload_paths.len(),
+            revision: self.revision,
+            applied: true,
+        })
+    }
+
+    fn requires_full_rescan(&self, path: &Path) -> bool {
+        if path == self.root {
+            return true;
+        }
+        if indexed_document_kind(&self.root, path).is_some() || self.is_related_markdown(path) {
+            return false;
+        }
+        let Ok(relative) = path.strip_prefix(&self.root) else {
+            return false;
+        };
+        if !(relative.starts_with("work-items") || relative.starts_with("records")) {
+            return false;
+        }
+        path.is_dir()
+            || self
+                .documents
+                .keys()
+                .any(|document| document.starts_with(path))
+    }
+
+    fn is_related_markdown(&self, path: &Path) -> bool {
+        let Ok(relative) = path.strip_prefix(&self.root) else {
+            return false;
+        };
+        if path.extension().and_then(|extension| extension.to_str()) != Some("md") {
+            return false;
+        }
+        (relative.starts_with("work-items")
+            && path.file_name().and_then(|name| name.to_str()) == Some("context.md"))
+            || relative.starts_with("records")
+    }
+
+    fn work_item_id_for_path(&self, path: &Path) -> Option<String> {
+        let relative = path.strip_prefix(&self.root).ok()?;
+        if relative.starts_with("records") {
+            let json_path = path.with_extension("json");
+            return self
+                .documents
+                .get(&json_path)
+                .and_then(|document| document.value.as_ref())
+                .and_then(|value| value.get("work_item_id"))
+                .and_then(Value::as_str)
+                .map(str::to_string);
+        }
+        if relative.starts_with("work-items") {
+            let directory = path.parent()?;
+            return self
+                .documents
+                .get(&directory.join("work-item.json"))
+                .and_then(|document| document.value.as_ref())
+                .and_then(|value| value.get("id"))
+                .and_then(Value::as_str)
+                .map(str::to_string)
+                .or_else(|| {
+                    directory
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .map(str::to_string)
+                });
+        }
+        None
+    }
+
+    fn all_work_item_ids(&self) -> BTreeSet<String> {
+        let mut ids = self
+            .snapshot
+            .work_items
+            .iter()
+            .map(|item| item.id.clone())
+            .collect::<BTreeSet<_>>();
+        for (path, document) in &self.documents {
+            let Some(value) = &document.value else {
+                continue;
+            };
+            let field = match indexed_document_kind(&self.root, path) {
+                Some(IndexedDocumentKind::WorkItem) => "id",
+                Some(IndexedDocumentKind::Context | IndexedDocumentKind::Checkpoint) => {
+                    "work_item_id"
+                }
+                None => continue,
+            };
+            if let Some(id) = value.get(field).and_then(Value::as_str) {
+                ids.insert(id.to_string());
+            }
+        }
+        ids
+    }
+
+    fn rebuild_snapshot(&self) -> DataRootSnapshot {
+        let mut issues = self
+            .documents
+            .values()
+            .flat_map(|document| document.issues.clone())
+            .collect::<Vec<_>>();
+        let mut work_item_files = Vec::new();
+        let mut context_files = Vec::new();
+        let mut checkpoint_files = Vec::new();
+        for (path, document) in &self.documents {
+            match indexed_document_kind(&self.root, path) {
+                Some(IndexedDocumentKind::WorkItem) => work_item_files.push((path, document)),
+                Some(IndexedDocumentKind::Context) => context_files.push((path, document)),
+                Some(IndexedDocumentKind::Checkpoint) => checkpoint_files.push((path, document)),
+                None => {}
+            }
+        }
+        work_item_files.sort_by_key(|(path, _)| *path);
+        context_files.sort_by_key(|(path, _)| *path);
+        checkpoint_files.sort_by_key(|(path, _)| *path);
+
+        let mut contexts = HashMap::new();
+        for (path, document) in &context_files {
+            if let Some(value) = &document.value {
+                validate_document(
+                    &self.root,
                     path,
-                    "unknown_work_item",
-                    format!("알 수 없는 업무 항목을 참조합니다: {work_item_id}"),
-                )),
-                Some(expected_project) if project_id.as_ref() != Some(expected_project) => {
+                    DocumentKind::WorkContext,
+                    value,
+                    &mut issues,
+                );
+                contexts.insert((*path).clone(), value.clone());
+            }
+        }
+
+        let mut work_items = Vec::new();
+        let mut work_item_ids = HashSet::new();
+        let mut work_item_projects = HashMap::new();
+        for (path, document) in &work_item_files {
+            let Some(value) = &document.value else {
+                continue;
+            };
+            if let Some(summary) =
+                inspect_work_item(&self.root, path, value, &contexts, &mut issues)
+            {
+                if !work_item_ids.insert(summary.id.clone()) {
                     issues.push(issue(
-                        root,
+                        &self.root,
                         path,
-                        "project_mismatch",
-                        format!("업무 항목 {work_item_id}의 프로젝트와 일치하지 않습니다."),
+                        "duplicate_work_item_id",
+                        format!("중복 업무 항목 ID입니다: {}", summary.id),
                     ));
                 }
-                Some(_) => {}
+                work_item_projects.insert(summary.id.clone(), summary.project_id.clone());
+                work_items.push(summary);
             }
         }
-        let markdown_path = path.with_extension("md");
-        if !markdown_path.exists() {
-            issues.push(issue(
-                root,
-                &markdown_path,
-                "missing_checkpoint_markdown",
-                "파생 체크포인트 Markdown이 없습니다.",
-            ));
+
+        let mut checkpoint_ids = HashSet::new();
+        for (path, document) in &checkpoint_files {
+            let Some(value) = &document.value else {
+                continue;
+            };
+            validate_document(
+                &self.root,
+                path,
+                DocumentKind::Checkpoint,
+                value,
+                &mut issues,
+            );
+            let checkpoint_id = required_string(&self.root, path, value, "id", &mut issues);
+            let work_item_id =
+                required_string(&self.root, path, value, "work_item_id", &mut issues);
+            let project_id = required_string(&self.root, path, value, "project_id", &mut issues);
+            if let Some(checkpoint_id) = checkpoint_id {
+                if !checkpoint_ids.insert(checkpoint_id.clone()) {
+                    issues.push(issue(
+                        &self.root,
+                        path,
+                        "duplicate_checkpoint_id",
+                        format!("중복 체크포인트 ID입니다: {checkpoint_id}"),
+                    ));
+                }
+            }
+            if let Some(work_item_id) = work_item_id {
+                match work_item_projects.get(&work_item_id) {
+                    None => issues.push(issue(
+                        &self.root,
+                        path,
+                        "unknown_work_item",
+                        format!("알 수 없는 업무 항목을 참조합니다: {work_item_id}"),
+                    )),
+                    Some(expected_project) if project_id.as_ref() != Some(expected_project) => {
+                        issues.push(issue(
+                            &self.root,
+                            path,
+                            "project_mismatch",
+                            format!("업무 항목 {work_item_id}의 프로젝트와 일치하지 않습니다."),
+                        ));
+                    }
+                    Some(_) => {}
+                }
+            }
+            let markdown_path = path.with_extension("md");
+            if !markdown_path.exists() {
+                issues.push(issue(
+                    &self.root,
+                    &markdown_path,
+                    "missing_checkpoint_markdown",
+                    "파생 체크포인트 Markdown이 없습니다.",
+                ));
+            }
+        }
+
+        work_items.sort_by(|left, right| {
+            right
+                .updated_at
+                .cmp(&left.updated_at)
+                .then_with(|| left.id.cmp(&right.id))
+        });
+        issues.sort_by(|left, right| {
+            left.path
+                .cmp(&right.path)
+                .then_with(|| left.code.cmp(&right.code))
+        });
+        let mut checkpoint_ids = checkpoint_ids.into_iter().collect::<Vec<_>>();
+        checkpoint_ids.sort();
+
+        DataRootSnapshot {
+            root: self.root.to_string_lossy().into_owned(),
+            counts: DataRootCounts {
+                work_items: work_item_files.len(),
+                contexts: context_files.len(),
+                checkpoints: checkpoint_files.len(),
+            },
+            issues,
+            work_items,
+            checkpoint_ids,
         }
     }
+}
 
-    work_items.sort_by(|left, right| {
-        right
-            .updated_at
-            .cmp(&left.updated_at)
-            .then_with(|| left.id.cmp(&right.id))
-    });
-    issues.sort_by(|left, right| {
-        left.path
-            .cmp(&right.path)
-            .then_with(|| left.code.cmp(&right.code))
-    });
-
-    let mut checkpoint_ids = checkpoint_ids.into_iter().collect::<Vec<_>>();
-    checkpoint_ids.sort();
-
-    Ok(DataRootSnapshot {
-        root: root.to_string_lossy().into_owned(),
-        counts: DataRootCounts {
-            work_items: work_item_json_files.len(),
-            contexts: context_files.len(),
-            checkpoints: checkpoint_files.len(),
-        },
-        issues,
-        work_items,
-        checkpoint_ids,
-    })
+pub fn inspect_data_root(root: impl AsRef<Path>) -> Result<DataRootSnapshot, CoreError> {
+    Ok(DataRootIndex::build(root)?.snapshot)
 }
 
 #[cfg(test)]
@@ -910,6 +1216,113 @@ mod tests {
                 .issues
                 .iter()
                 .any(|issue| issue.code == "invalid_json")
+        );
+    }
+
+    #[test]
+    fn incrementally_reloads_only_the_changed_document() {
+        let directory = tempdir().unwrap();
+        write_fixture(directory.path());
+        let context_path = directory.path().join("work-items/AUTH-142/context.json");
+        let mut index = DataRootIndex::build(directory.path()).unwrap();
+        let initial_revision = index.revision();
+        let mut context = read_data_json(&context_path).unwrap();
+        context["current_state"] = Value::String("증분 인덱스 갱신 완료".to_string());
+        write(
+            &context_path,
+            serde_json::to_string_pretty(&context).unwrap(),
+        )
+        .unwrap();
+
+        let update = index
+            .refresh_paths(std::slice::from_ref(&context_path))
+            .unwrap();
+
+        assert!(update.applied);
+        assert!(!update.full_rescan);
+        assert_eq!(update.reloaded_files, 1);
+        assert_eq!(update.revision, initial_revision + 1);
+        assert_eq!(update.changed_work_item_ids, ["AUTH-142"]);
+        assert_eq!(
+            update.snapshot.work_items[0].current_state.as_deref(),
+            Some("증분 인덱스 갱신 완료")
+        );
+        assert_eq!(
+            update.snapshot,
+            inspect_data_root(directory.path()).unwrap()
+        );
+
+        let full_update = index.refresh_all().unwrap();
+        assert_eq!(full_update.changed_work_item_ids, ["AUTH-142"]);
+    }
+
+    #[test]
+    fn ignores_changes_outside_indexed_data() {
+        let directory = tempdir().unwrap();
+        write_fixture(directory.path());
+        let mut index = DataRootIndex::build(directory.path()).unwrap();
+        let revision = index.revision();
+        let unrelated_path = directory.path().join("README.md");
+        write(&unrelated_path, "not indexed").unwrap();
+
+        let update = index
+            .refresh_paths(std::slice::from_ref(&unrelated_path))
+            .unwrap();
+
+        assert!(!update.applied);
+        assert_eq!(update.revision, revision);
+        assert_eq!(update.reloaded_files, 0);
+        assert!(update.changed_work_item_ids.is_empty());
+    }
+
+    #[test]
+    fn markdown_changes_update_relationship_issues_without_json_reload() {
+        let directory = tempdir().unwrap();
+        write_fixture(directory.path());
+        let mut index = DataRootIndex::build(directory.path()).unwrap();
+        let context_markdown = directory.path().join("work-items/AUTH-142/context.md");
+        fs::remove_file(&context_markdown).unwrap();
+
+        let update = index
+            .refresh_paths(std::slice::from_ref(&context_markdown))
+            .unwrap();
+
+        assert!(update.applied);
+        assert_eq!(update.reloaded_files, 0);
+        assert_eq!(update.changed_work_item_ids, ["AUTH-142"]);
+        assert!(
+            update
+                .snapshot
+                .issues
+                .iter()
+                .any(|issue| issue.code == "missing_context_markdown")
+        );
+    }
+
+    #[test]
+    fn repeated_incremental_updates_converge_with_a_full_scan() {
+        let directory = tempdir().unwrap();
+        write_fixture(directory.path());
+        let context_path = directory.path().join("work-items/AUTH-142/context.json");
+        let mut context = read_data_json(&context_path).unwrap();
+        let mut index = DataRootIndex::build(directory.path()).unwrap();
+
+        for iteration in 0..250 {
+            context["current_state"] = Value::String(format!("soak iteration {iteration}"));
+            write(&context_path, serde_json::to_string(&context).unwrap()).unwrap();
+            let update = index
+                .refresh_paths(std::slice::from_ref(&context_path))
+                .unwrap();
+            assert_eq!(update.reloaded_files, 1);
+        }
+
+        assert_eq!(
+            index.snapshot(),
+            &inspect_data_root(directory.path()).unwrap()
+        );
+        assert_eq!(
+            index.snapshot().work_items[0].current_state.as_deref(),
+            Some("soak iteration 249")
         );
     }
 

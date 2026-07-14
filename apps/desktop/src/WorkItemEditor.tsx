@@ -14,6 +14,8 @@ import {
   type WorkItemWritePreview,
 } from "./desktop";
 import { WriteDiffReview } from "./WriteDiffReview";
+import { Button } from "./ui/Button";
+import { EditorDialog } from "./ui/EditorDialog";
 
 interface WorkItemEditorProps {
   mode: "create" | "edit";
@@ -275,17 +277,6 @@ export function WorkItemEditor({ mode, workItemId, onClose, onSaved }: WorkItemE
     };
   }, [loadVersion, mode, workItemId]);
 
-  useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key !== "Escape" || saving) return;
-      if (isDirty && !window.confirm("저장하지 않은 변경 사항을 버릴까요?")) return;
-      onClose();
-    }
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isDirty, onClose, saving]);
-
   function requestClose() {
     if (saving) return;
     if (isDirty && !window.confirm("저장하지 않은 변경 사항을 버릴까요?")) return;
@@ -361,25 +352,14 @@ export function WorkItemEditor({ mode, workItemId, onClose, onSaved }: WorkItemE
   }
 
   return (
-    <div className="editor-backdrop">
-      <section
-        className="editor-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="work-item-editor-title"
-      >
-        <header className="editor-header">
-          <div>
-            <span className="eyebrow">{mode === "create" ? "새 업무" : "업무 편집"}</span>
-            <h2 id="work-item-editor-title">
-              {mode === "create" ? "업무 항목 만들기" : snapshot?.work_item.title ?? workItemId}
-            </h2>
-          </div>
-          <button type="button" className="icon-button" onClick={requestClose} aria-label="편집기 닫기">
-            ×
-          </button>
-        </header>
-
+    <EditorDialog
+      eyebrow={mode === "create" ? "새 업무" : "업무 편집"}
+      title={mode === "create" ? "업무 항목 만들기" : snapshot?.work_item.title ?? workItemId}
+      titleId="work-item-editor-title"
+      closeLabel="편집기 닫기"
+      closeDisabled={saving}
+      onRequestClose={requestClose}
+    >
         <div className="editor-body">
           {error ? (
             <div className={`editor-alert ${error.kind}`} role="alert">
@@ -400,9 +380,9 @@ export function WorkItemEditor({ mode, workItemId, onClose, onSaved }: WorkItemE
                 )}
               </div>
               {error.kind === "revision_conflict" && (
-                <button type="button" className="secondary-button" onClick={reloadLatest}>
+                <Button size="sm" variant="secondary" onClick={reloadLatest}>
                   최신 내용 다시 불러오기
-                </button>
+                </Button>
               )}
             </div>
           ) : null}
@@ -611,17 +591,16 @@ export function WorkItemEditor({ mode, workItemId, onClose, onSaved }: WorkItemE
                     ? "변경 사항이 없습니다."
                     : "먼저 실제 파일 diff를 생성해 검토합니다."}
                 </div>
-                <button type="button" className="ghost-button" onClick={requestClose}>
+                <Button size="sm" variant="ghost" onClick={requestClose}>
                   취소
-                </button>
-                <button type="submit" className="primary-button" disabled={!hasChanges}>
+                </Button>
+                <Button type="submit" size="sm" variant="primary" disabled={!hasChanges}>
                   변경 검토
-                </button>
+                </Button>
               </footer>
             </form>
           )}
         </div>
-      </section>
-    </div>
+    </EditorDialog>
   );
 }

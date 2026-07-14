@@ -1,4 +1,5 @@
 import type { WorkItemFileChange } from "./desktop";
+import { Button } from "./ui/Button";
 
 interface WriteDiffReviewProps {
   eyebrow: string;
@@ -72,12 +73,12 @@ export function WriteDiffReview({
       </div>
 
       <footer className="editor-footer">
-        <button type="button" className="ghost-button" onClick={onBack} disabled={saving}>
+        <Button size="sm" variant="ghost" onClick={onBack} disabled={saving}>
           편집으로 돌아가기
-        </button>
-        <button type="button" className="primary-button" onClick={onCommit} disabled={saving}>
+        </Button>
+        <Button size="sm" variant="primary" onClick={onCommit} disabled={saving}>
           {saving ? "저장 중…" : (commitLabel ?? `${files.length}개 파일 저장`)}
-        </button>
+        </Button>
       </footer>
     </div>
   );

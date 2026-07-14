@@ -18,6 +18,7 @@ import { CheckpointDetails } from "./CheckpointDetails";
 import { CheckpointEditor } from "./CheckpointEditor";
 import { PerformanceNoteEditor } from "./PerformanceNoteEditor";
 import { useSnapshotNotifications } from "./useSnapshotNotifications";
+import { Button } from "./ui/Button";
 import { WorkItemEditor } from "./WorkItemEditor";
 
 const DATA_ROOT_KEY = "work-harvest:data-root";
@@ -353,17 +354,17 @@ export function App() {
         <div className="topbar-actions">
           {snapshot && (
             <>
-              <button className="button secondary" onClick={() => setEditor({ mode: "create" })}>
+              <Button variant="secondary" onClick={() => setEditor({ mode: "create" })}>
                 새 업무
-              </button>
-              <button className="button secondary" onClick={() => void refresh()}>
+              </Button>
+              <Button variant="secondary" onClick={() => void refresh()}>
                 다시 검사
-              </button>
+              </Button>
             </>
           )}
-          <button className="button primary" onClick={() => void chooseRoot()}>
+          <Button variant="primary" onClick={() => void chooseRoot()}>
             {snapshot ? "폴더 변경" : "데이터 폴더 선택"}
-          </button>
+          </Button>
         </div>
       </header>
 
@@ -376,9 +377,9 @@ export function App() {
           <p>
             기본 위치는 <code>~/work-records</code>입니다. 앱은 선택한 폴더를 읽고 외부 변경을 감시합니다.
           </p>
-          <button className="button primary" onClick={() => void chooseRoot()}>
+          <Button variant="primary" onClick={() => void chooseRoot()}>
             폴더 선택
-          </button>
+          </Button>
         </section>
       )}
 

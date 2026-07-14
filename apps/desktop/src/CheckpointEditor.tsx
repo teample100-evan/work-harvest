@@ -12,6 +12,8 @@ import {
   type WorkItemStatus,
 } from "./desktop";
 import { WriteDiffReview } from "./WriteDiffReview";
+import { Button } from "./ui/Button";
+import { EditorDialog } from "./ui/EditorDialog";
 
 interface CheckpointEditorProps {
   workItemId: string;
@@ -261,16 +263,6 @@ export function CheckpointEditor({ workItemId, onClose, onSaved }: CheckpointEdi
     };
   }, [loadVersion, workItemId]);
 
-  useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key !== "Escape" || saving) return;
-      if (isDirty && !window.confirm("저장하지 않은 체크포인트를 버릴까요?")) return;
-      onClose();
-    }
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isDirty, onClose, saving]);
-
   function requestClose() {
     if (saving) return;
     if (isDirty && !window.confirm("저장하지 않은 체크포인트를 버릴까요?")) return;
@@ -321,25 +313,15 @@ export function CheckpointEditor({ workItemId, onClose, onSaved }: CheckpointEdi
   }
 
   return (
-    <div className="editor-backdrop">
-      <section
-        className="editor-dialog checkpoint-editor-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="checkpoint-editor-title"
-      >
-        <header className="editor-header">
-          <div>
-            <span className="eyebrow">작업 기록</span>
-            <h2 id="checkpoint-editor-title">
-              {snapshot ? `${snapshot.work_item.title} · 체크포인트` : "체크포인트 추가"}
-            </h2>
-          </div>
-          <button type="button" className="icon-button" onClick={requestClose} aria-label="기록기 닫기">
-            ×
-          </button>
-        </header>
-
+    <EditorDialog
+      eyebrow="작업 기록"
+      title={snapshot ? `${snapshot.work_item.title} · 체크포인트` : "체크포인트 추가"}
+      titleId="checkpoint-editor-title"
+      closeLabel="기록기 닫기"
+      closeDisabled={saving}
+      onRequestClose={requestClose}
+      wide
+    >
         <div className="editor-body">
           {error ? (
             <div className={`editor-alert ${error.kind}`} role="alert">
@@ -358,9 +340,9 @@ export function CheckpointEditor({ workItemId, onClose, onSaved }: CheckpointEdi
                 </details>
               </div>
               {error.kind === "revision_conflict" ? (
-                <button type="button" className="secondary-button" onClick={() => setLoadVersion((value) => value + 1)}>
+                <Button size="sm" variant="secondary" onClick={() => setLoadVersion((value) => value + 1)}>
                   최신 Context 다시 불러오기
-                </button>
+                </Button>
               ) : null}
             </div>
           ) : null}
@@ -592,13 +574,12 @@ export function CheckpointEditor({ workItemId, onClose, onSaved }: CheckpointEdi
 
               <footer className="editor-footer">
                 <div className="editor-footer-copy" aria-live="polite">새 기록 2개와 현재 업무 파일 3개의 diff를 먼저 생성합니다.</div>
-                <button type="button" className="ghost-button" onClick={requestClose}>취소</button>
-                <button type="submit" className="primary-button">5개 파일 변경 검토</button>
+                <Button size="sm" variant="ghost" onClick={requestClose}>취소</Button>
+                <Button type="submit" size="sm" variant="primary">5개 파일 변경 검토</Button>
               </footer>
             </form>
           )}
         </div>
-      </section>
-    </div>
+    </EditorDialog>
   );
 }

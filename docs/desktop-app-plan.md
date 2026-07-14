@@ -1,6 +1,6 @@
 # Work Harvest 데스크톱 앱 구현 계획
 
-- 상태: M5 직접 배포 기반 구현, M2 하루 soak 병행
+- 상태: M6 UI Foundation 진행, M5 직접 배포와 M2 하루 soak 병행
 - 최초 작성일: 2026-07-14
 - 대상: macOS Apple Silicon
 - 관련 결정: [ADR 0001](./adr/0001-tauri-desktop-app.md), [ADR 0002](./adr/0002-recoverable-local-write-transactions.md)
@@ -376,6 +376,62 @@ Node 구현은 서명된 Rust CLI 직접 배포와 실사용 안정성을 확인
 
 Node fallback은 첫 서명 릴리스를 실제 데이터에 사용하고 Node·Rust read-only 비교와 Skill bundled CLI 경로가 모두 통과한 뒤 별도 변경으로 제거한다. 자동 업데이트는 Apple 코드 서명과 별개의 Tauri updater 개인키를 저장소 밖에서 발급해야 하므로 첫 서명 릴리스와 분리한다. 상세 절차와 필수 secret은 [macOS 배포](./distribution.md)에 기록한다.
 
+### M6. UI Foundation과 화면 책임 분리
+
+상태: 진행 중 — UI Foundation 첫 기반 묶음 완료
+
+M6는 기능 마일스톤과 분리한 UI 기반 작업이다. 기존 로컬 파일 읽기·쓰기 계약과 화면의 차분한 시각 정체성은 유지하면서, 접근성 동작과 반복 스타일을 공통 계층으로 옮긴다.
+
+기술 선택:
+
+- Base UI를 Dialog, Select, Tabs, Menu, Tooltip처럼 포커스·키보드·팝업 동작이 복잡한 컴포넌트에만 사용한다.
+- 색상, 타이포그래피, 간격, 모서리와 그림자는 CSS custom property 기반 Work Harvest 디자인 토큰으로 관리한다.
+- Lucide React를 의미가 분명한 인터페이스 아이콘에 사용한다.
+- Button, IconButton, Field, Badge, Panel, EmptyState와 AppShell처럼 제품 표현을 결정하는 컴포넌트는 프로젝트가 직접 소유한다.
+- Tailwind 전면 전환이나 Material UI·Ant Design 같은 완성형 테마 도입은 하지 않는다.
+- shadcn/ui는 현재 기반에 중복되는 전면 도입 대신, 향후 특정 복합 컴포넌트가 필요할 때 소스 참고 대상으로만 검토한다.
+
+구현 순서:
+
+1. 디자인 토큰과 공통 primitive 스타일을 기존 대형 stylesheet에서 분리한다.
+2. 공통 Button·IconButton과 Base UI 기반 Dialog를 만든다.
+3. 기존 편집기 세 개를 공통 Dialog로 옮겨 focus trap, Escape, 외부 클릭과 focus 복귀 동작을 일원화한다.
+4. `App.tsx`의 데이터 orchestration과 대시보드 표현을 feature 단위로 분리한다.
+5. 대시보드에서 시스템 상태와 업무 흐름의 정보 위계를 다시 잡는다.
+6. 체크포인트 기록을 긴 단일 폼에서 단계형 흐름으로 전환한다.
+7. 키보드 탐색, 화면 축소, 빈 상태와 오류 상태를 회귀 검증한다.
+
+첫 구현 묶음:
+
+- [x] UI 라이브러리 선택과 도입 원칙 문서화
+- [x] 디자인 토큰·공통 Button·IconButton 구현
+- [x] 업무·체크포인트·성과 노트 편집기의 Base UI Dialog 전환
+- [x] 기존 화면과 저장 흐름의 기능 회귀 검증
+
+첫 기반 검증 결과(2026-07-14):
+
+| 항목 | 결과 |
+| --- | --- |
+| 공통 동작 | 세 편집기가 동일한 Base UI Dialog의 focus trap·Escape·외부 클릭·접근성 이름을 사용하고 수동 전역 keydown listener 제거 |
+| 시각 회귀 | 기존 warm neutral·green 스타일과 편집기 정보 구조를 유지하면서 닫기 기호를 Lucide 아이콘으로 교체 |
+| 자동 검증 | Node 7개, Rust Core 41개, Desktop 5개와 CLI·interop 테스트, TypeScript·Vite build 통과 |
+| 네이티브 QA | 실제 macOS 앱에서 새 업무·체크포인트·성과 노트 Dialog 열기, 스크롤, 버튼과 Escape 닫기 확인 |
+| 산출물 | bundled CLI 포함 앱 26MB, DMG 7.6MB로 30MB 목표 유지 |
+
+M6에서 하지 않는 작업:
+
+- 파일 형식, Rust Core, Tauri command와 writer 프로토콜 변경
+- Figma 또는 외부 디자인 MCP를 전제로 한 시안 관리
+- 기존 화면 전체를 한 번에 재작성하는 시각 리브랜딩
+- 단계형 기록 화면과 대시보드 재배치를 첫 기반 변경에 함께 포함
+
+완료 조건:
+
+- 공통 토큰과 primitive가 중복된 버튼·팝업 스타일을 대체한다.
+- 모든 편집기가 같은 focus·dismiss 동작을 사용하고 저장 중 또는 미저장 변경 보호를 유지한다.
+- 기존 TypeScript·Vite build와 Rust·Node 회귀 검증이 통과한다.
+- 후속 화면 재설계가 도메인 로직을 건드리지 않고 feature 컴포넌트 안에서 가능하다.
+
 ## 6. 데이터 무결성 전략
 
 읽기 전용 단계는 파일을 수정하지 않는다. 쓰기 기능은 다음 안전장치를 모두 구현한 뒤 활성화한다.
@@ -441,3 +497,4 @@ Node fallback은 첫 서명 릴리스를 실제 데이터에 사용하고 Node·
 | 2026-07-14 | M3 성과 노트 렌더링 Core 이전, source revision 보호·전체 diff·GUI 생성 후 열기 구현으로 안전 쓰기 완료 |
 | 2026-07-14 | M4 native Rust CLI 7개 명령·Node 출력 호환·YAML 입력·Skill 우선 실행 구현 완료 |
 | 2026-07-14 | M5 Apple Silicon CLI sidecar·설치 앱 Skill 탐색·서명/공증 GitHub 초안 Release 파이프라인 구현 |
+| 2026-07-14 | M6 UI Foundation을 기능·배포 작업과 분리하고 Base UI·CSS 토큰·Lucide 기반 구현 원칙 확정 |

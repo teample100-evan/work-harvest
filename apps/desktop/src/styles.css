@@ -1,10 +1,5 @@
-:root {
-  font-family:
-    Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  color: #1c211d;
-  background: #f3f1ea;
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
+#root {
+  isolation: isolate;
 }
 
 * {
@@ -17,7 +12,7 @@ body {
   min-height: 100vh;
   background:
     radial-gradient(circle at 90% 0%, rgb(198 219 191 / 45%), transparent 32rem),
-    #f3f1ea;
+    var(--color-canvas);
 }
 
 button,
@@ -32,7 +27,7 @@ button {
 }
 
 code {
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: var(--font-mono);
 }
 
 .app-shell {
@@ -73,7 +68,7 @@ p {
 
 h1 {
   margin-bottom: 0;
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--font-display);
   font-size: clamp(34px, 4vw, 52px);
   font-weight: 500;
   letter-spacing: -0.04em;
@@ -88,34 +83,6 @@ h2 {
 .topbar-actions {
   display: flex;
   gap: 10px;
-}
-
-.button {
-  min-height: 40px;
-  border: 1px solid transparent;
-  border-radius: 11px;
-  padding: 0 16px;
-  font-weight: 700;
-  transition: transform 120ms ease, background 120ms ease;
-}
-
-.button:active {
-  transform: translateY(1px);
-}
-
-.button.primary {
-  color: #f8f7f2;
-  background: #263f2f;
-}
-
-.button.primary:hover {
-  background: #1d3225;
-}
-
-.button.secondary {
-  border-color: #d3d1c9;
-  color: #26322a;
-  background: rgb(255 255 255 / 50%);
 }
 
 .root-summary {
@@ -242,10 +209,10 @@ h2 {
 
 .metric-card,
 .panel {
-  border: 1px solid rgb(42 53 44 / 10%);
-  border-radius: 18px;
-  background: rgb(255 255 255 / 88%);
-  box-shadow: 0 12px 28px rgb(51 61 53 / 5%);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-raised);
+  box-shadow: var(--shadow-panel);
 }
 
 .metric-card {
@@ -898,11 +865,17 @@ h2 {
   position: fixed;
   z-index: 50;
   inset: 0;
-  display: grid;
-  padding: 24px;
-  place-items: center;
   background: rgb(24 31 26 / 62%);
   backdrop-filter: blur(5px);
+}
+
+.editor-viewport {
+  position: fixed;
+  z-index: 51;
+  inset: 0;
+  display: grid;
+  padding: var(--space-6);
+  place-items: center;
 }
 
 .editor-dialog {
@@ -912,9 +885,9 @@ h2 {
   overflow: hidden;
   flex-direction: column;
   border: 1px solid rgb(255 255 255 / 45%);
-  border-radius: 20px;
-  background: #f6f4ed;
-  box-shadow: 0 28px 80px rgb(14 21 16 / 32%);
+  border-radius: var(--radius-dialog);
+  background: var(--color-surface-muted);
+  box-shadow: var(--shadow-dialog);
 }
 
 .checkpoint-editor-dialog {
@@ -932,23 +905,9 @@ h2 {
 }
 
 .editor-header h2 {
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--font-display);
   font-size: 25px;
   font-weight: 500;
-}
-
-.icon-button {
-  display: grid;
-  width: 34px;
-  height: 34px;
-  flex: none;
-  place-items: center;
-  border: 1px solid #d3d2ca;
-  border-radius: 50%;
-  color: #4f5b52;
-  background: #fff;
-  font-size: 24px;
-  line-height: 1;
 }
 
 .editor-body {
@@ -1082,42 +1041,6 @@ h2 {
   margin-right: auto;
   color: #737c74;
   font-size: 10px;
-}
-
-.primary-button,
-.secondary-button,
-.ghost-button {
-  min-height: 38px;
-  border-radius: 10px;
-  padding: 0 14px;
-  font-size: 11px;
-  font-weight: 750;
-}
-
-.primary-button {
-  border: 1px solid #2c4b36;
-  color: #f7f8f4;
-  background: #2c4b36;
-}
-
-.secondary-button {
-  border: 1px solid #aebcaf;
-  color: #2f5038;
-  background: #eef3eb;
-}
-
-.ghost-button {
-  border: 1px solid #cfcec7;
-  color: #526057;
-  background: rgb(255 255 255 / 65%);
-}
-
-.primary-button:disabled,
-.secondary-button:disabled,
-.ghost-button:disabled,
-.icon-button:disabled {
-  cursor: default;
-  opacity: 0.48;
 }
 
 .editor-alert {

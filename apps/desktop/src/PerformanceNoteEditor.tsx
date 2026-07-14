@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import {
   createPerformanceNote,
   desktopWriteError,
@@ -9,6 +9,8 @@ import {
   type PerformanceNoteWritePreview,
 } from "./desktop";
 import { WriteDiffReview } from "./WriteDiffReview";
+import { Button } from "./ui/Button";
+import { EditorDialog } from "./ui/EditorDialog";
 
 interface PerformanceNoteEditorProps {
   workItemId: string;
@@ -50,16 +52,6 @@ export function PerformanceNoteEditor({
   const [error, setError] = useState<DesktopWriteError | null>(null);
   const [saving, setSaving] = useState(false);
   const isDirty = output.trim().length > 0 || preview !== null;
-
-  useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key !== "Escape" || saving) return;
-      if (isDirty && !window.confirm("검토 중인 성과 노트를 닫을까요?")) return;
-      onClose();
-    }
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isDirty, onClose, saving]);
 
   function requestClose() {
     if (saving) return;
@@ -111,23 +103,15 @@ export function PerformanceNoteEditor({
   }
 
   return (
-    <div className="editor-backdrop">
-      <section
-        className="editor-dialog checkpoint-editor-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="performance-note-editor-title"
-      >
-        <header className="editor-header">
-          <div>
-            <span className="eyebrow">Performance note</span>
-            <h2 id="performance-note-editor-title">성과 노트 초안 만들기</h2>
-          </div>
-          <button type="button" className="icon-button" onClick={requestClose} aria-label="성과 노트 생성기 닫기">
-            ×
-          </button>
-        </header>
-
+    <EditorDialog
+      eyebrow="Performance note"
+      title="성과 노트 초안 만들기"
+      titleId="performance-note-editor-title"
+      closeLabel="성과 노트 생성기 닫기"
+      closeDisabled={saving}
+      onRequestClose={requestClose}
+      wide
+    >
         <div className="editor-body">
           {error ? (
             <div className={`editor-alert ${error.kind}`} role="alert">
@@ -148,9 +132,9 @@ export function PerformanceNoteEditor({
                 </details>
               </div>
               {error.kind === "revision_conflict" ? (
-                <button type="button" className="secondary-button" onClick={() => setError(null)}>
+                <Button size="sm" variant="secondary" onClick={() => setError(null)}>
                   최신 원본 다시 검토
-                </button>
+                </Button>
               ) : null}
             </div>
           ) : null}
@@ -200,17 +184,16 @@ export function PerformanceNoteEditor({
                 <div className="editor-footer-copy" aria-live="polite">
                   저장 전 실제 Markdown 전체와 원본 revision을 함께 검토합니다.
                 </div>
-                <button type="button" className="ghost-button" onClick={requestClose}>
+                <Button size="sm" variant="ghost" onClick={requestClose}>
                   취소
-                </button>
-                <button type="submit" className="primary-button">
+                </Button>
+                <Button type="submit" size="sm" variant="primary">
                   Markdown 초안 검토
-                </button>
+                </Button>
               </footer>
             </form>
           )}
         </div>
-      </section>
-    </div>
+    </EditorDialog>
   );
 }

@@ -16,7 +16,15 @@
 
 데이터 루트의 `.work-harvest/write.lock`에 OS advisory exclusive lock을 건다. 잠금을 즉시 얻지 못하면 기다리거나 덮어쓰지 않고 `LockBusy`로 중단한다. 프로세스가 종료되면 OS가 잠금을 해제하므로 stale lock 파일을 임의로 삭제하지 않는다.
 
-이 잠금은 advisory이므로 Work Harvest가 제공하는 모든 writer가 같은 규약에 참여해야 한다. 기존 Node CLI는 아직 이 잠금을 사용하지 않으므로 Rust 쓰기 명령을 사용자에게 노출하기 전에 호환 잠금 또는 Rust CLI 전환을 완료한다.
+이 잠금은 advisory이므로 Work Harvest가 제공하는 모든 writer가 같은 규약에 참여해야 한다. 기존 Node CLI는 파일을 직접 변경하지 않고 Rust write helper에 commit을 위임해 같은 잠금을 사용한다. 향후 Rust CLI로 전환하더라도 `DataRootWriter` 규약은 유지한다.
+
+### Node CLI 호환 bridge
+
+Node CLI는 기존 JSON·YAML 입력, 정규화와 출력 형식을 유지한다. 업무 생성, 체크포인트 작성과 성과 노트 생성 시 prevalidated UTF-8 내용과 create 또는 예상 SHA-256 교체 조건을 protocol v1 요청으로 Rust helper에 전달한다. helper만 실제 파일 시스템을 변경한다.
+
+체크포인트는 Node가 읽은 `work-item.json`, `context.json`, `context.md`의 revision을 모두 전달하고 새 체크포인트 JSON·Markdown과 함께 한 트랜잭션으로 commit한다. 세 revision 중 하나라도 달라지면 새 파일을 포함한 다섯 변경을 모두 거부한다.
+
+helper는 잠금을 획득한 뒤 변경 전 전체 오류 지문을 기준선으로 저장한다. 설치 후 새 스키마·관계 오류가 생기면 rollback하되, 변경 전부터 있던 무관한 오류는 안전한 쓰기를 막지 않는다. 개발 checkout은 최신 debug helper를 재사용하거나 Cargo로 빌드하고, 배포 환경은 `WORK_HARVEST_WRITE_HELPER`로 검증된 실행 파일을 지정할 수 있다.
 
 ### revision 충돌 감지
 
@@ -74,3 +82,5 @@ manifest 상태는 다음 순서로만 이동한다.
 - 복구 중 외부 변경 발견 시 quarantine
 - 손상된 manifest의 quarantine과 후속 쓰기 차단
 - 루트 탈출과 symlink 경로 거부
+- Rust lock 보유 중 Node CLI 쓰기 거부
+- Node가 읽은 뒤 외부 변경이 발생한 체크포인트 다섯 파일 전체 미반영

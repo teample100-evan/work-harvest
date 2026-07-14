@@ -1,0 +1,16 @@
+[package]
+name = "work-harvest-write-helper"
+version = "0.1.0"
+description = "Internal transaction bridge for the legacy Work Harvest Node CLI"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+work-harvest-core = { path = "../work-harvest-core" }
+
+[dev-dependencies]
+tempfile.workspace = true

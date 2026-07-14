@@ -1,6 +1,6 @@
 # Work Harvest 데스크톱 앱 구현 계획
 
-- 상태: M3 업무 항목 쓰기 Core 완료, M2 하루 soak 병행
+- 상태: M3 Node writer 잠금 호환 완료, M2 하루 soak 병행
 - 최초 작성일: 2026-07-14
 - 대상: macOS Apple Silicon
 - 관련 결정: [ADR 0001](./adr/0001-tauri-desktop-app.md), [ADR 0002](./adr/0002-recoverable-local-write-transactions.md)
@@ -206,7 +206,7 @@ WORK_HARVEST_SOAK_SECONDS=86400 cargo test -p work-harvest-desktop \
 
 ### M3. 안전한 쓰기 Core
 
-상태: 진행 중 — 안전 쓰기 기반과 업무 항목 API 완료
+상태: 진행 중 — 안전 쓰기 기반·업무 항목 API·Node writer 잠금 호환 완료
 
 완료:
 
@@ -223,14 +223,16 @@ WORK_HARVEST_SOAK_SECONDS=86400 cargo test -p work-harvest-desktop \
 - 불변 식별자를 보존하고 세 파일을 함께 교체하는 업무 항목·Context patch API
 - 변경 업무의 스키마·상호 참조·파생 Markdown post-write 검증
 - `repositories`와 `links` 내부 JSON 필드 순서 보존
+- Node CLI의 업무 생성·체크포인트·성과 노트 commit을 Rust write helper로 일원화
+- 체크포인트 대상 세 파일의 revision과 신규 두 파일을 묶은 다섯 파일 트랜잭션
+- 변경 전 오류 지문을 허용하면서 새 데이터 오류만 rollback하는 호환 검증
+- 최신 debug helper 재사용·Cargo fallback·`WORK_HARVEST_WRITE_HELPER` 실행 파일 주입
 
 남음:
 
-- 체크포인트 작성
-- 체크포인트 작성에 따른 context 갱신
-- 성과 노트 생성
+- 체크포인트 정규화·렌더링의 Rust Core 이전
+- 성과 노트 생성의 Rust Core 이전
 - 저장 전 diff와 검증 표시
-- 기존 Node CLI의 잠금 호환 또는 Rust CLI writer 전환
 
 안전 쓰기 기반 검증 결과(2026-07-14):
 
@@ -255,13 +257,24 @@ WORK_HARVEST_SOAK_SECONDS=86400 cargo test -p work-harvest-desktop \
 | 검증 보호 | 잘못된 status 등 스키마 위반 patch를 파일 교체 전에 거부하고 저장 후 파생 Markdown 재현성 검사 |
 | 자동 검증 | Rust Core 30개와 Core 전체 Clippy 통과 |
 
+Node writer 잠금 호환 검증 결과(2026-07-14):
+
+| 항목 | 결과 |
+| --- | --- |
+| 직접 쓰기 제거 | Node `src/`에서 `writeFile`·`rename` 기반 변경 경로를 제거하고 세 쓰기 명령을 helper protocol v1로 일원화 |
+| 교차 프로세스 잠금 | Rust가 데이터 루트 lock을 보유한 동안 Node 업무 생성을 `LockBusy`로 거부하고 파일 미생성 확인 |
+| 체크포인트 충돌 | Node가 읽은 뒤 `context.md`를 외부 변경하면 신규 JSON·Markdown과 기존 업무·Context 두 JSON을 모두 미반영 |
+| post-write 검증 | 변경 전 오류는 기준선으로 허용하고 이번 commit이 새 데이터 오류를 만들면 전체 rollback |
+| CLI 호환·성능 | 기존 Node 통합 4개가 같은 출력으로 통과하고 fresh debug helper 사용 시 기존 수준의 실행 시간 유지 |
+| 전체 회귀·산출물 | Core 30개·write helper 5개·Desktop 4개·Node 4개, workspace Clippy와 release 빌드 통과. helper 5.2MB, 앱 약 17MB, DMG 4.8MB |
+
 완료 조건:
 
 - [x] GUI Core와 기존 Node CLI의 정규화 결과가 호환된다.
-- [ ] 모든 사용자 노출 writer가 같은 advisory lock에 참여해 동시 쓰기에서 기존 기록을 덮어쓰지 않는다.
+- [x] 모든 사용자 노출 writer가 같은 advisory lock에 참여해 동시 쓰기에서 기존 기록을 덮어쓰지 않는다.
 - [x] 실패 후 변경 집합이 검증 가능한 상태로 복구된다.
 
-업무 항목 Core API는 준비됐지만 기존 Node CLI가 advisory lock에 아직 참여하지 않는다. 따라서 실제 GUI의 생성·수정 명령은 잠금 호환 또는 Rust CLI 전환 뒤에 연결한다.
+GUI 쓰기를 막던 잠금 호환 조건은 충족됐다. 다음 구현 단위에서 업무 항목 Core API를 Tauri 명령으로 노출하고 저장 전 diff·스키마 검증·revision 충돌 안내가 있는 생성·수정 화면을 연결한다.
 
 ### M4. Rust CLI 통합
 
@@ -348,3 +361,4 @@ WORK_HARVEST_SOAK_SECONDS=86400 cargo test -p work-harvest-desktop \
 | 2026-07-14 | M2 캐시형 증분 인덱스·업무 단위 갱신·watcher soak 하네스 구현 |
 | 2026-07-14 | M3 단일 writer 잠금·revision 충돌·복구 가능한 다중 파일 트랜잭션 기반 구현 |
 | 2026-07-14 | M3 Node 호환 업무 항목 생성·revision 보호 수정·편집 snapshot Core API 구현 |
+| 2026-07-14 | M3 Node CLI 전체 쓰기의 Rust helper 잠금·revision·rollback 호환 전환 |

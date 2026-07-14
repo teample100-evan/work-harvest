@@ -1,14 +1,12 @@
 import path from "node:path";
 import { CliError } from "./errors.js";
-import {
-  joinFrontmatter,
-  pathExists,
-  writeJsonAtomic,
-  writeJsonExclusive,
-  writeTextAtomic,
-  writeTextExclusive,
-} from "./io.js";
+import { joinFrontmatter, pathExists, serializeJson } from "./io.js";
 import { resolveWithinRoot } from "./paths.js";
+import {
+  commitFileOperations,
+  createFileOperation,
+  replaceFileOperation,
+} from "./rust-writer.js";
 import { calendarDate, calendarParts, generateCheckpointId } from "./time.js";
 import {
   loadWorkItem,
@@ -286,7 +284,7 @@ export async function captureCheckpoint({ root, input, validators }) {
     throw new CliError("Checkpoint input requires work_item_id", { exitCode: 2 });
   }
 
-  const { workItem, workItemPath } = await loadWorkItem(
+  const { workItem, workItemPath, workItemRevision } = await loadWorkItem(
     root,
     String(input.work_item_id),
   );
@@ -319,11 +317,13 @@ export async function captureCheckpoint({ root, input, validators }) {
     throw new CliError(`Checkpoint already exists: ${checkpoint.id}`);
   }
 
-  const { contextPath, contextDataPath, context } = await readContext(
-    root,
-    workItem,
-    validators,
-  );
+  const {
+    contextPath,
+    contextDataPath,
+    context,
+    contextDataRevision,
+    contextRevision,
+  } = await readContext(root, workItem, validators);
   const updatedContext = mergeContextState(
     context,
     input.context_update,
@@ -336,14 +336,35 @@ export async function captureCheckpoint({ root, input, validators }) {
     });
   }
 
-  await writeJsonExclusive(recordPath, checkpoint);
-  await writeTextExclusive(
-    markdownPath,
-    renderCheckpointMarkdown(checkpoint),
-  );
-  await writeJsonAtomic(workItemPath, updated);
-  await writeJsonAtomic(contextDataPath, updatedContext);
-  await writeTextAtomic(contextPath, renderContext(updated, updatedContext));
+  await commitFileOperations({
+    root,
+    operations: [
+      createFileOperation(root, recordPath, serializeJson(checkpoint)),
+      createFileOperation(
+        root,
+        markdownPath,
+        renderCheckpointMarkdown(checkpoint),
+      ),
+      replaceFileOperation(
+        root,
+        workItemPath,
+        workItemRevision,
+        serializeJson(updated),
+      ),
+      replaceFileOperation(
+        root,
+        contextDataPath,
+        contextDataRevision,
+        serializeJson(updatedContext),
+      ),
+      replaceFileOperation(
+        root,
+        contextPath,
+        contextRevision,
+        renderContext(updated, updatedContext),
+      ),
+    ],
+  });
 
   return {
     checkpoint,

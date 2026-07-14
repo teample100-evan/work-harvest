@@ -1,8 +1,12 @@
 import path from "node:path";
 import { CliError } from "./errors.js";
-import { pathExists, writeTextExclusive } from "./io.js";
+import { pathExists } from "./io.js";
 import { resolveWithinRoot } from "./paths.js";
 import { listCheckpointsForWorkItem } from "./queries.js";
+import {
+  commitFileOperations,
+  createFileOperation,
+} from "./rust-writer.js";
 import { loadWorkItem, readContext } from "./work-items.js";
 
 function bullets(values, fallback = "미확인") {
@@ -226,7 +230,16 @@ export async function createPerformanceNote({ root, validators, workItemId, outp
   if (await pathExists(reportPath)) {
     throw new CliError(`Performance note already exists: ${path.relative(root, reportPath)}`);
   }
-  await writeTextExclusive(reportPath, renderPerformanceNote({ workItem, context, checkpoints }));
+  await commitFileOperations({
+    root,
+    operations: [
+      createFileOperation(
+        root,
+        reportPath,
+        renderPerformanceNote({ workItem, context, checkpoints }),
+      ),
+    ],
+  });
   return {
     work_item: workItem,
     checkpoint_count: checkpoints.length,

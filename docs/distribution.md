@@ -26,6 +26,23 @@ target/release/bundle/dmg/Work Harvest_0.1.0_aarch64.dmg
 
 로컬 빌드는 Developer ID 인증서가 없으면 배포 가능한 서명·공증 상태가 아니다. `desktop:bundle:verify`는 bundled CLI의 실행과 데이터 검증을 확인하고 현재 서명 정보를 출력한다.
 
+### debug DMG 문제 확인
+
+UI 회귀 확인용 debug 앱만 필요하면 DMG 마운트 과정을 생략한다.
+
+```bash
+pnpm --dir apps/desktop tauri build --debug --bundles app
+```
+
+debug DMG까지 확인할 때는 다음 명령을 사용한다.
+
+```bash
+pnpm --dir apps/desktop tauri build --debug --bundles dmg
+hdiutil verify "target/debug/bundle/dmg/Work Harvest_0.1.0_aarch64.dmg"
+```
+
+Tauri의 `bundle_dmg.sh`는 `hdiutil`로 임시 디스크 이미지를 만들고 마운트한다. 파일 시스템이나 디스크 이미지 마운트가 제한된 샌드박스에서는 `.app` 생성 후 별도 오류 출력 없이 실패할 수 있다. 같은 명령이 일반 macOS 실행 환경에서 성공하고 `hdiutil verify`가 `VALID`를 반환한다면 debug 번들 설정 문제가 아니라 실행 환경 제약으로 분류한다.
+
 ## GitHub Release 준비
 
 `.github/workflows/release-macos.yml`은 `v<version>` 태그가 push될 때만 실행한다. 다음 GitHub Actions secret이 모두 필요하다.

@@ -1,5 +1,5 @@
+import { Select } from "@base-ui/react/select";
 import { Check, ChevronDown } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
 
 export interface SelectMenuOption<T extends string> {
   value: T;
@@ -23,66 +23,55 @@ export function SelectMenu<T extends string>({
   options,
   value,
 }: SelectMenuProps<T>) {
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
   const selected = options.find((option) => option.value === value) ?? options[0];
 
-  useEffect(() => {
-    if (!open) return;
-
-    function closeOnOutsideClick(event: PointerEvent) {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
-    }
-
-    function closeOnEscape(event: KeyboardEvent) {
-      if (event.key === "Escape") setOpen(false);
-    }
-
-    document.addEventListener("pointerdown", closeOnOutsideClick);
-    document.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.removeEventListener("pointerdown", closeOnOutsideClick);
-      document.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [open]);
-
   return (
-    <div className={`select-menu ${className}`.trim()} ref={rootRef}>
-      <button
-        aria-expanded={open}
-        aria-haspopup="listbox"
-        aria-label={`${ariaLabel}, 현재 ${selected?.label ?? value}`}
-        className="select-menu-trigger"
+    <div className={`select-menu ${className}`.trim()}>
+      <Select.Root<T>
         disabled={disabled}
-        onClick={() => setOpen((current) => !current)}
-        type="button"
+        items={options}
+        modal={false}
+        onValueChange={(nextValue) => {
+          if (nextValue !== null) onChange(nextValue);
+        }}
+        value={value}
       >
-        <span>{selected?.label ?? value}</span>
-        <ChevronDown aria-hidden="true" size={14} strokeWidth={1.8} />
-      </button>
-      {open && (
-        <div className="select-menu-options" role="listbox" aria-label={ariaLabel}>
-          {options.map((option) => {
-            const isSelected = option.value === value;
-            return (
-              <button
-                aria-selected={isSelected}
-                className={isSelected ? "selected" : ""}
-                key={option.value}
-                onClick={() => {
-                  onChange(option.value);
-                  setOpen(false);
-                }}
-                role="option"
-                type="button"
-              >
-                <span>{option.label}</span>
-                {isSelected && <Check aria-hidden="true" size={14} strokeWidth={2} />}
-              </button>
-            );
-          })}
-        </div>
-      )}
+        <Select.Trigger
+          aria-label={`${ariaLabel}, 현재 ${selected?.label ?? value}`}
+          className="select-menu-trigger"
+        >
+          <Select.Value className="select-menu-value" />
+          <Select.Icon className="select-menu-icon">
+            <ChevronDown aria-hidden="true" size={14} strokeWidth={1.8} />
+          </Select.Icon>
+        </Select.Trigger>
+        <Select.Portal>
+          <Select.Positioner
+            align="end"
+            alignItemWithTrigger={false}
+            className="select-menu-positioner"
+            collisionPadding={8}
+            sideOffset={5}
+          >
+            <Select.Popup className="select-menu-options" aria-label={ariaLabel}>
+              <Select.List>
+                {options.map((option) => (
+                  <Select.Item
+                    className="select-menu-option"
+                    key={option.value}
+                    value={option.value}
+                  >
+                    <Select.ItemText>{option.label}</Select.ItemText>
+                    <Select.ItemIndicator className="select-menu-option-indicator">
+                      <Check aria-hidden="true" size={14} strokeWidth={2} />
+                    </Select.ItemIndicator>
+                  </Select.Item>
+                ))}
+              </Select.List>
+            </Select.Popup>
+          </Select.Positioner>
+        </Select.Portal>
+      </Select.Root>
     </div>
   );
 }

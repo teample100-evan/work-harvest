@@ -1,3 +1,4 @@
+import { Menu } from "@base-ui/react/menu";
 import { CheckpointDetails } from "../../CheckpointDetails";
 import type { WorkItemDetail } from "../../desktop";
 import { DetailList } from "./DetailList";
@@ -84,20 +85,40 @@ export function WorkItemDetailPanel({
             <button className="inline-action" onClick={() => onEdit(detail.id)} type="button">
               업무 편집
             </button>
-            <details className="detail-actions-menu">
-              <summary aria-label="기타 업무 작업">···</summary>
-              <div className="detail-actions-popover">
-                <button onClick={() => onCreatePerformanceNote(detail.id)} type="button">
-                  성과 노트 만들기
-                </button>
-                <button onClick={() => onOpenContext(detail.id)} type="button">
-                  Context.md 열기
-                </button>
-                <button onClick={() => onReveal(detail.id)} type="button">
-                  Finder에서 보기
-                </button>
-              </div>
-            </details>
+            <Menu.Root modal={false}>
+              <Menu.Trigger aria-label="기타 업무 작업" className="detail-actions-trigger">
+                ···
+              </Menu.Trigger>
+              <Menu.Portal>
+                <Menu.Positioner
+                  align="start"
+                  className="detail-actions-positioner"
+                  collisionPadding={8}
+                  sideOffset={6}
+                >
+                  <Menu.Popup className="detail-actions-popover">
+                    <Menu.Item
+                      className="detail-actions-item"
+                      onClick={() => onCreatePerformanceNote(detail.id)}
+                    >
+                      성과 노트 만들기
+                    </Menu.Item>
+                    <Menu.Item
+                      className="detail-actions-item"
+                      onClick={() => onOpenContext(detail.id)}
+                    >
+                      Context.md 열기
+                    </Menu.Item>
+                    <Menu.Item
+                      className="detail-actions-item"
+                      onClick={() => onReveal(detail.id)}
+                    >
+                      Finder에서 보기
+                    </Menu.Item>
+                  </Menu.Popup>
+                </Menu.Positioner>
+              </Menu.Portal>
+            </Menu.Root>
           </div>
           {actionError && <div className="alert error compact-alert" role="alert">{actionError}</div>}
 

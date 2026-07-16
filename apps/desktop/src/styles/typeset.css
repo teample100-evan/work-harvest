@@ -19,15 +19,15 @@
 }
 
 .typeset-work-detail {
-  --typeset-size: 14px;
-  --typeset-leading: 1.72;
+  --typeset-size: var(--text-body);
+  --typeset-leading: var(--leading-body);
   --typeset-flow: 1.35em;
 }
 
 @media (max-width: 720px) {
   .typeset-work-detail {
-    --typeset-size: 15px;
-    --typeset-leading: 1.78;
+    --typeset-size: var(--text-body);
+    --typeset-leading: 1.8;
     --typeset-flow: 1.4em;
   }
 }

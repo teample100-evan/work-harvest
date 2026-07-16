@@ -1,0 +1,116 @@
+/*
+ * Work Harvest reading rhythm, adapted from the shadcn/typeset model.
+ * The product owns this file. Size, leading, and flow are the three public controls.
+ */
+.typeset,
+.typeset-work-detail {
+  --typeset-font-body: var(--font-sans);
+  --typeset-font-heading: var(--font-sans);
+  --typeset-font-mono: var(--font-mono);
+  --typeset-size: var(--text-body);
+  --typeset-leading: var(--leading-body);
+  --typeset-flow: 1.25em;
+}
+
+.typeset-ui {
+  --typeset-size: var(--text-ui);
+  --typeset-leading: var(--leading-ui);
+  --typeset-flow: 0.9em;
+}
+
+.typeset-work-detail {
+  --typeset-size: var(--text-body);
+  --typeset-leading: var(--leading-body);
+  --typeset-flow: 1.35em;
+}
+
+@media (max-width: 720px) {
+  .typeset-work-detail {
+    --typeset-size: var(--text-body);
+    --typeset-leading: 1.8;
+    --typeset-flow: 1.4em;
+  }
+}
+
+.typeset {
+  color: var(--color-text);
+  font-family: var(--typeset-font-body);
+  font-size: var(--typeset-size);
+  line-height: var(--typeset-leading);
+  overflow-wrap: anywhere;
+  word-break: keep-all;
+}
+
+.typeset :where(h1, h2, h3, h4, h5, h6) {
+  margin: 0;
+  color: var(--color-text-strong);
+  font-family: var(--typeset-font-heading);
+  font-weight: 650;
+  letter-spacing: var(--tracking-title);
+  line-height: var(--leading-tight);
+  text-wrap: balance;
+}
+
+.typeset :where(p, ul, ol, blockquote, pre, table, hr) {
+  margin: 0;
+}
+
+.typeset > :where(* + *) {
+  margin-block-start: var(--typeset-flow);
+}
+
+.typeset :where(ul, ol) {
+  padding-inline-start: 1.3em;
+}
+
+.typeset :where(li + li) {
+  margin-block-start: calc(var(--typeset-flow) * 0.3);
+}
+
+.typeset :where(code, pre) {
+  font-family: var(--typeset-font-mono);
+  word-break: normal;
+}
+
+.typeset :where(code) {
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-xs);
+  padding: 0.12em 0.34em;
+  background: var(--color-surface-muted);
+  font-size: 0.9em;
+}
+
+.typeset :where(pre) {
+  overflow: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 1em;
+  background: var(--color-surface-muted);
+}
+
+.typeset :where(pre code) {
+  border: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.typeset :where(blockquote) {
+  border-inline-start: 2px solid var(--color-border);
+  padding-inline-start: 1em;
+  color: var(--color-text-muted);
+}
+
+.typeset :where(hr) {
+  border: 0;
+  border-block-start: 1px solid var(--color-border-subtle);
+}
+
+.typeset-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.not-typeset,
+[data-not-typeset] {
+  font: initial;
+}

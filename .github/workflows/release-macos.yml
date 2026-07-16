@@ -1,0 +1,125 @@
+name: Release macOS
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-apple-silicon:
+    name: Apple Silicon signed release
+    runs-on: macos-latest
+    env:
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      WORK_HARVEST_TARGET_TRIPLE: aarch64-apple-darwin
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11.9.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify release inputs
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          node scripts/verify-release-version.mjs "$GITHUB_REF_NAME"
+          for variable in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            if [[ -z "${!variable:-}" ]]; then
+              echo "Missing required GitHub Actions secret: $variable" >&2
+              exit 1
+            fi
+          done
+
+      - name: Run release checks
+        run: pnpm check:all
+
+      - name: Import Developer ID certificate
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          certificate_path="$RUNNER_TEMP/work-harvest-certificate.p12"
+          keychain_path="$RUNNER_TEMP/work-harvest-signing.keychain-db"
+          keychain_password="$(uuidgen)"
+          echo "$APPLE_CERTIFICATE" | base64 --decode > "$certificate_path"
+          security create-keychain -p "$keychain_password" "$keychain_path"
+          security default-keychain -s "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security unlock-keychain -p "$keychain_password" "$keychain_path"
+          security import "$certificate_path" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign -t cert -f pkcs12 -k "$keychain_path"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain_path"
+          security list-keychains -d user -s "$keychain_path"
+          signing_identity="$(security find-identity -v -p codesigning "$keychain_path" | awk -F'"' '/Developer ID Application/ { print $2; exit }')"
+          if [[ -z "$signing_identity" ]]; then
+            echo "Developer ID Application identity was not found in the imported certificate." >&2
+            exit 1
+          fi
+          echo "APPLE_SIGNING_IDENTITY=$signing_identity" >> "$GITHUB_ENV"
+
+      - name: Build and sign native CLI
+        shell: bash
+        run: |
+          cargo build --locked --release --package work-harvest-cli --target "$WORK_HARVEST_TARGET_TRIPLE"
+          cli_path="target/$WORK_HARVEST_TARGET_TRIPLE/release/wh"
+          codesign --force --options runtime --timestamp --sign "$APPLE_SIGNING_IDENTITY" "$cli_path"
+          codesign --verify --strict --verbose=2 "$cli_path"
+          mkdir -p dist
+          cp "$cli_path" dist/wh
+          archive="work-harvest-cli-$GITHUB_REF_NAME-$WORK_HARVEST_TARGET_TRIPLE.tar.gz"
+          tar -C dist -czf "dist/$archive" wh
+          cd dist
+          shasum -a 256 "$archive" > "$archive.sha256"
+          echo "WORK_HARVEST_SKIP_CLI_BUILD=1" >> "$GITHUB_ENV"
+
+      - name: Build, sign, notarize, and create draft release
+        id: tauri-release
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: apps/desktop
+          tauriScript: pnpm tauri
+          tagName: ${{ github.ref_name }}
+          releaseName: Work Harvest ${{ github.ref_name }}
+          releaseBody: Apple Silicon Work Harvest app and signed native wh CLI.
+          releaseDraft: true
+          prerelease: false
+          args: --target aarch64-apple-darwin --config src-tauri/tauri.bundle.conf.json
+
+      - name: Verify bundled CLI
+        run: node scripts/verify-macos-bundle.mjs "target/aarch64-apple-darwin/release/bundle/macos/Work Harvest.app" --require-developer-id
+
+      - name: Upload native CLI to the same release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "$GITHUB_REF_NAME" dist/*.tar.gz dist/*.sha256 --clobber

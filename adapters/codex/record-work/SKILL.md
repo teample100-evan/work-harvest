@@ -15,7 +15,7 @@ Run every Work Harvest command through:
 <skill-dir>/scripts/wh <command>
 ```
 
-The wrapper resolves its CLI checkout from `WORK_HARVEST_CLI_HOME` or the Skill's source checkout. It stores records in `~/work-records` by default; set `WORK_HARVEST_HOME` or pass `--root` only to use a different data store. Stop and report the missing configuration if the wrapper cannot locate Work Harvest.
+The wrapper uses `WORK_HARVEST_CLI_BIN` when set. Otherwise it prefers the CLI bundled in an explicit `WORK_HARVEST_APP_PATH`, a release Rust CLI from `WORK_HARVEST_CLI_HOME` or the Skill's source checkout, then `/Applications/Work Harvest.app`, `~/Applications/Work Harvest.app`, `~/.local/bin/wh`, and a debug Rust CLI. It falls back to the Node compatibility CLI only when no native binary exists. It stores records in `~/work-records` by default; set `WORK_HARVEST_HOME` or pass `--root` only to use a different data store. Stop and report the missing configuration if the wrapper cannot locate Work Harvest.
 
 ## Workflow
 

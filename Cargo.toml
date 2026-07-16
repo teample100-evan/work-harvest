@@ -1,0 +1,33 @@
+[workspace]
+members = [
+  "apps/desktop/src-tauri",
+  "crates/work-harvest-cli",
+  "crates/work-harvest-core",
+  "crates/work-harvest-write-helper",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2024"
+license = "MIT"
+rust-version = "1.85"
+
+[workspace.dependencies]
+chrono = { version = "0.4.45", default-features = false, features = ["std"] }
+chrono-tz = "0.10"
+fs2 = "0.4.3"
+jsonschema = { version = "0.47.0", default-features = false }
+notify = "8"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+serde_yaml_ng = "0.10.0"
+sha2 = "0.11"
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-build = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-notification = "2.3.3"
+tauri-plugin-opener = "2.5.4"
+tauri-plugin-window-state = "2.4.1"
+tempfile = "3"
+thiserror = "2"
+walkdir = "2"

@@ -2,3 +2,13 @@ node_modules/
 coverage/
 .DS_Store
 *.tmp-*
+.pnpm-store/
+target/
+apps/desktop/dist/
+apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/gen/
+apps/desktop/src-tauri/binaries/wh-*
+apps/desktop/icon-source.*
+apps/desktop/src-tauri/icons/*
+!apps/desktop/src-tauri/icons/icon.icns
+!apps/desktop/src-tauri/icons/icon.png

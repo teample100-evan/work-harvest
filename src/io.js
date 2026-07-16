@@ -1,11 +1,9 @@
 import { constants } from "node:fs";
+import { createHash } from "node:crypto";
 import {
   access,
-  mkdir,
   readFile,
   readdir,
-  rename,
-  writeFile,
 } from "node:fs/promises";
 import path from "node:path";
 import YAML from "yaml";
@@ -58,45 +56,38 @@ export async function readStructuredInput(inputPath) {
 }
 
 export async function readJson(filePath) {
+  return (await readJsonWithRevision(filePath)).value;
+}
+
+function revision(buffer) {
+  return {
+    sha256: createHash("sha256").update(buffer).digest("hex"),
+    bytes: buffer.length,
+  };
+}
+
+export async function readJsonWithRevision(filePath) {
   try {
-    return JSON.parse(await readFile(filePath, "utf8"));
+    const buffer = await readFile(filePath);
+    return {
+      value: JSON.parse(buffer.toString("utf8")),
+      revision: revision(buffer),
+    };
   } catch (error) {
     throw new CliError(`Could not read JSON file ${filePath}: ${error.message}`);
   }
 }
 
-export async function writeJsonExclusive(filePath, value) {
-  await mkdir(path.dirname(filePath), { recursive: true });
-  try {
-    await writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, {
-      encoding: "utf8",
-      flag: "wx",
-    });
-  } catch (error) {
-    if (error.code === "EEXIST") {
-      throw new CliError(`Refusing to overwrite existing file: ${filePath}`);
-    }
-    throw error;
-  }
+export async function readTextWithRevision(filePath) {
+  const buffer = await readFile(filePath);
+  return {
+    text: buffer.toString("utf8"),
+    revision: revision(buffer),
+  };
 }
 
-export async function writeTextExclusive(filePath, value) {
-  await mkdir(path.dirname(filePath), { recursive: true });
-  try {
-    await writeFile(filePath, value, { encoding: "utf8", flag: "wx" });
-  } catch (error) {
-    if (error.code === "EEXIST") {
-      throw new CliError(`Refusing to overwrite existing file: ${filePath}`);
-    }
-    throw error;
-  }
-}
-
-export async function writeJsonAtomic(filePath, value) {
-  await mkdir(path.dirname(filePath), { recursive: true });
-  const temporaryPath = `${filePath}.tmp-${process.pid}-${Date.now()}`;
-  await writeFile(temporaryPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
-  await rename(temporaryPath, filePath);
+export function serializeJson(value) {
+  return `${JSON.stringify(value, null, 2)}\n`;
 }
 
 export function splitFrontmatter(markdown) {
@@ -113,13 +104,6 @@ export function splitFrontmatter(markdown) {
 export function joinFrontmatter(attributes, body) {
   const yaml = YAML.stringify(attributes, { lineWidth: 0 }).trimEnd();
   return `---\n${yaml}\n---\n\n${body.replace(/^\s*/, "")}`;
-}
-
-export async function writeTextAtomic(filePath, value) {
-  await mkdir(path.dirname(filePath), { recursive: true });
-  const temporaryPath = `${filePath}.tmp-${process.pid}-${Date.now()}`;
-  await writeFile(temporaryPath, value, "utf8");
-  await rename(temporaryPath, filePath);
 }
 
 export async function listFilesRecursively(directory, predicate = () => true) {

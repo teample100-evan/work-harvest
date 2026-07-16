@@ -182,6 +182,11 @@ test("work item creation, checkpoint capture, and validation form one flow", () 
     ]);
     assert.equal(report.status, 0, report.stderr);
     const reportResult = JSON.parse(report.stdout);
+    assert.deepEqual(Object.keys(reportResult).sort(), [
+      "checkpoint_count",
+      "paths",
+      "work_item",
+    ]);
     assert.equal(reportResult.checkpoint_count, 1);
     assert.equal(
       reportResult.paths.report,
@@ -205,6 +210,19 @@ test("work item creation, checkpoint capture, and validation form one flow", () 
     ]);
     assert.notEqual(duplicateReport.status, 0);
     assert.match(duplicateReport.stderr, /already exists/);
+
+    const invalidReport = run([
+      "report",
+      "performance-note",
+      "--work-item",
+      "AUTH-142",
+      "--output",
+      "reports/performance-notes/AUTH-142.txt",
+      "--root",
+      root,
+    ]);
+    assert.equal(invalidReport.status, 2);
+    assert.match(invalidReport.stderr, /Report output must be a \.md file/);
 
     const validation = run(["validate", "--root", root, "--json"]);
     assert.equal(validation.status, 0, validation.stderr);

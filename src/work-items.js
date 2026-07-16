@@ -1,11 +1,10 @@
-import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { CliError } from "./errors.js";
 import {
   pathExists,
-  readJson,
-  writeJsonExclusive,
-  writeTextExclusive,
+  readJsonWithRevision,
+  readTextWithRevision,
+  serializeJson,
 } from "./io.js";
 import {
   canonicalContextDataPath,
@@ -13,6 +12,10 @@ import {
   canonicalWorkItemPath,
   resolveWithinRoot,
 } from "./paths.js";
+import {
+  commitFileOperations,
+  createFileOperation,
+} from "./rust-writer.js";
 
 function stringList(values) {
   return (values ?? []).map((value) => String(value));
@@ -201,9 +204,14 @@ export async function createWorkItem({ root, input, validators }) {
     throw new CliError(`Work item already exists: ${workItem.id}`);
   }
 
-  await writeJsonExclusive(contextDataPath, context);
-  await writeTextExclusive(contextPath, renderContext(workItem, context));
-  await writeJsonExclusive(workItemPath, workItem);
+  await commitFileOperations({
+    root,
+    operations: [
+      createFileOperation(root, contextDataPath, serializeJson(context)),
+      createFileOperation(root, contextPath, renderContext(workItem, context)),
+      createFileOperation(root, workItemPath, serializeJson(workItem)),
+    ],
+  });
 
   return {
     work_item: workItem,
@@ -221,7 +229,9 @@ export async function loadWorkItem(root, workItemId) {
   if (!(await pathExists(workItemPath))) {
     throw new CliError(`Unknown work item: ${workItemId}`);
   }
-  return { workItem: await readJson(workItemPath), workItemPath };
+  const { value: workItem, revision: workItemRevision } =
+    await readJsonWithRevision(workItemPath);
+  return { workItem, workItemPath, workItemRevision };
 }
 
 export async function readContext(root, workItem, validators) {
@@ -236,7 +246,11 @@ export async function readContext(root, workItem, validators) {
     );
   }
 
-  const context = await readJson(contextDataPath);
+  const [contextResult, markdownResult] = await Promise.all([
+    readJsonWithRevision(contextDataPath),
+    readTextWithRevision(contextPath),
+  ]);
+  const context = contextResult.value;
   if (validators) {
     const validation = validators.workContext(context);
     if (!validation.valid) {
@@ -250,6 +264,8 @@ export async function readContext(root, workItem, validators) {
     contextPath,
     contextDataPath,
     context,
-    markdown: await readFile(contextPath, "utf8"),
+    markdown: markdownResult.text,
+    contextDataRevision: contextResult.revision,
+    contextRevision: markdownResult.revision,
   };
 }

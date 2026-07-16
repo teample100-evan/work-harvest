@@ -1,0 +1,21 @@
+[package]
+name = "work-harvest-cli"
+version = "0.1.0"
+description = "Native command-line interface for Work Harvest"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "wh"
+path = "src/main.rs"
+
+[dependencies]
+chrono.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml_ng.workspace = true
+work-harvest-core = { path = "../work-harvest-core" }
+
+[dev-dependencies]
+tempfile.workspace = true

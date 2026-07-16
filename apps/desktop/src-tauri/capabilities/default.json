@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main-window",
+  "description": "Permissions for the local Work Harvest desktop window",
+  "windows": ["main"],
+  "permissions": ["core:default", "dialog:allow-open", "notification:default"]
+}

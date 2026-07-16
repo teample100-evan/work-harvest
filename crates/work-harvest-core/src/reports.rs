@@ -123,6 +123,8 @@ pub struct WeeklyReportWritePreview {
     pub stats: WeeklyReportStats,
     pub paths: PerformanceNotePaths,
     pub source_revisions: Vec<PerformanceNoteSourceRevision>,
+    pub report_revision: Option<FileRevision>,
+    pub replaces_existing: bool,
     pub files: Vec<WorkItemFileChange>,
 }
 
@@ -133,6 +135,7 @@ pub struct WeeklyReportWriteResult {
     pub stats: WeeklyReportStats,
     pub paths: PerformanceNotePaths,
     pub source_revisions: Vec<PerformanceNoteSourceRevision>,
+    pub replaced_existing: bool,
     pub commit: WriteCommit,
 }
 
@@ -162,6 +165,8 @@ struct PreparedWeeklyReport {
     stats: WeeklyReportStats,
     paths: PerformanceNotePaths,
     source_revisions: Vec<PerformanceNoteSourceRevision>,
+    report_revision: Option<FileRevision>,
+    existing_markdown: Option<String>,
     markdown: String,
 }
 
@@ -1444,9 +1449,19 @@ fn prepare_weekly_report(
         .to_str()
         .expect("normalize_output_path accepts UTF-8 input")
         .replace(std::path::MAIN_SEPARATOR, "/");
-    if writer.revision(&output)?.is_some() {
-        return Err(WriteError::CreateConflict(output).into());
-    }
+    let report_revision = writer.revision(&output)?;
+    let existing_markdown = if report_revision.is_some() {
+        Some(
+            fs::read_to_string(writer.root().join(&output)).map_err(|source| {
+                PerformanceNoteWriteError::Read {
+                    path: output.clone(),
+                    source,
+                }
+            })?,
+        )
+    } else {
+        None
+    };
 
     let mut source_revisions = Vec::new();
     for source in &sources {
@@ -1494,6 +1509,8 @@ fn prepare_weekly_report(
         stats,
         paths: PerformanceNotePaths { report: output },
         source_revisions,
+        report_revision,
+        existing_markdown,
         markdown,
     })
 }
@@ -1537,16 +1554,23 @@ pub fn preview_weekly_report(
 ) -> Result<WeeklyReportWritePreview, PerformanceNoteWriteError> {
     let writer = DataRootWriter::acquire(root)?;
     let prepared = prepare_weekly_report(&writer, input, generated_at)?;
+    let replaces_existing = prepared.report_revision.is_some();
     Ok(WeeklyReportWritePreview {
         start_date: prepared.start_date,
         end_date: prepared.end_date,
         stats: prepared.stats,
         paths: prepared.paths.clone(),
         source_revisions: prepared.source_revisions,
+        report_revision: prepared.report_revision,
+        replaces_existing,
         files: vec![WorkItemFileChange {
             path: prepared.paths.report,
-            operation: WorkItemChangeOperation::Create,
-            before: None,
+            operation: if replaces_existing {
+                WorkItemChangeOperation::Replace
+            } else {
+                WorkItemChangeOperation::Create
+            },
+            before: prepared.existing_markdown,
             after: prepared.markdown,
         }],
     })
@@ -1556,40 +1580,59 @@ fn commit_weekly_report(
     mut writer: DataRootWriter,
     prepared: PreparedWeeklyReport,
     expected: Vec<PerformanceNoteSourceRevision>,
+    expected_report_revision: Option<FileRevision>,
 ) -> Result<WeeklyReportWriteResult, PerformanceNoteWriteError> {
     verify_source_revisions(&expected, &prepared.source_revisions)?;
     let report_path = prepared.paths.report.clone();
+    if expected_report_revision != prepared.report_revision {
+        return Err(WriteError::RevisionConflict {
+            path: report_path,
+            expected: expected_report_revision
+                .as_ref()
+                .map(|revision| revision.sha256.clone())
+                .unwrap_or_else(|| "absent".to_string()),
+            actual: prepared
+                .report_revision
+                .as_ref()
+                .map(|revision| revision.sha256.clone()),
+        }
+        .into());
+    }
+    let replaced_existing = prepared.report_revision.is_some();
     let expected_markdown = prepared.markdown.clone();
     let start_date = prepared.start_date.clone();
     let end_date = prepared.end_date.clone();
     let validation_sources = prepared.source_revisions.clone();
     let validation_start = start_date.clone();
     let validation_end = end_date.clone();
-    let commit = writer.commit_validated(
-        vec![WriteOperation::create(
+    let operation = match &prepared.report_revision {
+        Some(revision) => WriteOperation::replace(
             PathBuf::from(&report_path),
+            revision.sha256.clone(),
             prepared.markdown.into_bytes(),
-        )],
-        move |root| {
-            let actual_sources =
-                current_weekly_source_revisions(root, &validation_start, &validation_end)
-                    .map_err(|error| error.to_string())?;
-            verify_source_revisions(&validation_sources, &actual_sources)
+        ),
+        None => WriteOperation::create(PathBuf::from(&report_path), prepared.markdown.into_bytes()),
+    };
+    let commit = writer.commit_validated(vec![operation], move |root| {
+        let actual_sources =
+            current_weekly_source_revisions(root, &validation_start, &validation_end)
                 .map_err(|error| error.to_string())?;
-            let actual =
-                fs::read_to_string(root.join(&report_path)).map_err(|error| error.to_string())?;
-            if actual != expected_markdown {
-                return Err("weekly report does not match the reviewed Markdown".to_string());
-            }
-            Ok(())
-        },
-    )?;
+        verify_source_revisions(&validation_sources, &actual_sources)
+            .map_err(|error| error.to_string())?;
+        let actual =
+            fs::read_to_string(root.join(&report_path)).map_err(|error| error.to_string())?;
+        if actual != expected_markdown {
+            return Err("weekly report does not match the reviewed Markdown".to_string());
+        }
+        Ok(())
+    })?;
     Ok(WeeklyReportWriteResult {
         start_date,
         end_date,
         stats: prepared.stats,
         paths: prepared.paths,
         source_revisions: prepared.source_revisions,
+        replaced_existing,
         commit,
     })
 }
@@ -1598,11 +1641,12 @@ pub fn create_weekly_report(
     root: impl AsRef<Path>,
     input: WeeklyReportInput,
     expected: Vec<PerformanceNoteSourceRevision>,
+    expected_report_revision: Option<FileRevision>,
     generated_at: &str,
 ) -> Result<WeeklyReportWriteResult, PerformanceNoteWriteError> {
     let writer = DataRootWriter::acquire(root)?;
     let prepared = prepare_weekly_report(&writer, input, generated_at)?;
-    commit_weekly_report(writer, prepared, expected)
+    commit_weekly_report(writer, prepared, expected, expected_report_revision)
 }
 
 pub fn weekly_report_markdown_path(
@@ -1783,6 +1827,7 @@ mod tests {
             directory.path(),
             weekly_input(),
             preview.source_revisions,
+            preview.report_revision,
             GENERATED_AT,
         )
         .unwrap();
@@ -1790,6 +1835,101 @@ mod tests {
         assert_eq!(
             fs::read_to_string(directory.path().join(&result.paths.report)).unwrap(),
             markdown.as_str()
+        );
+    }
+
+    #[test]
+    fn weekly_report_previews_and_commits_a_revision_guarded_replacement() {
+        let directory = tempdir().unwrap();
+        seed_examples(directory.path());
+        let first_preview =
+            preview_weekly_report(directory.path(), weekly_input(), GENERATED_AT).unwrap();
+        let first = create_weekly_report(
+            directory.path(),
+            weekly_input(),
+            first_preview.source_revisions,
+            first_preview.report_revision,
+            GENERATED_AT,
+        )
+        .unwrap();
+
+        let replacement_preview =
+            preview_weekly_report(directory.path(), weekly_input(), GENERATED_AT).unwrap();
+        assert!(replacement_preview.replaces_existing);
+        assert!(replacement_preview.report_revision.is_some());
+        assert_eq!(
+            replacement_preview.files[0].operation,
+            WorkItemChangeOperation::Replace
+        );
+        let existing = fs::read_to_string(directory.path().join(&first.paths.report)).unwrap();
+        assert_eq!(
+            replacement_preview.files[0].before.as_deref(),
+            Some(existing.as_str())
+        );
+
+        let reviewed = format!(
+            "{}\n- 사용자 보완 내용\n",
+            replacement_preview.files[0].after
+        );
+        let result = create_weekly_report(
+            directory.path(),
+            WeeklyReportInput {
+                start_date: replacement_preview.start_date.clone(),
+                end_date: replacement_preview.end_date.clone(),
+                output: Some(replacement_preview.paths.report.clone()),
+                markdown: Some(reviewed.clone()),
+            },
+            replacement_preview.source_revisions,
+            replacement_preview.report_revision,
+            GENERATED_AT,
+        )
+        .unwrap();
+        assert!(result.replaced_existing);
+        assert_eq!(
+            fs::read_to_string(directory.path().join(result.paths.report)).unwrap(),
+            reviewed
+        );
+    }
+
+    #[test]
+    fn weekly_report_never_overwrites_a_report_changed_after_preview() {
+        let directory = tempdir().unwrap();
+        seed_examples(directory.path());
+        let first_preview =
+            preview_weekly_report(directory.path(), weekly_input(), GENERATED_AT).unwrap();
+        let first = create_weekly_report(
+            directory.path(),
+            weekly_input(),
+            first_preview.source_revisions,
+            first_preview.report_revision,
+            GENERATED_AT,
+        )
+        .unwrap();
+        let replacement_preview =
+            preview_weekly_report(directory.path(), weekly_input(), GENERATED_AT).unwrap();
+        let path = directory.path().join(&first.paths.report);
+        fs::write(&path, "외부에서 변경한 보고서\n").unwrap();
+
+        let error = create_weekly_report(
+            directory.path(),
+            WeeklyReportInput {
+                start_date: replacement_preview.start_date,
+                end_date: replacement_preview.end_date,
+                output: Some(replacement_preview.paths.report),
+                markdown: Some(replacement_preview.files[0].after.clone()),
+            },
+            replacement_preview.source_revisions,
+            replacement_preview.report_revision,
+            GENERATED_AT,
+        )
+        .unwrap_err();
+        assert!(matches!(
+            error,
+            PerformanceNoteWriteError::Write(WriteError::RevisionConflict { .. })
+        ));
+        assert_eq!(
+            fs::read_to_string(path).unwrap(),
+            "외부에서 변경한 보고서\n"
         );
     }
 
@@ -1850,6 +1990,7 @@ mod tests {
                 ),
             },
             preview.source_revisions,
+            preview.report_revision,
             GENERATED_AT,
         )
         .unwrap_err();

@@ -15,7 +15,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_opener::OpenerExt;
 use work_harvest_core::{
     CheckpointInput, CheckpointWriteError, CheckpointWritePreview, CheckpointWriteResult,
-    DataRootIndex, DataRootSnapshot, DataRootUpdate, PerformanceNoteInput,
+    DataRootIndex, DataRootSnapshot, DataRootUpdate, FileRevision, PerformanceNoteInput,
     PerformanceNoteSourceRevision, PerformanceNoteWriteError, PerformanceNoteWritePreview,
     PerformanceNoteWriteResult, WeeklyReportInput, WeeklyReportWritePreview,
     WeeklyReportWriteResult, WorkItemCreateInput, WorkItemDetail, WorkItemEditRevisions,
@@ -494,10 +494,17 @@ fn create_weekly_report(
     state: State<'_, DesktopState>,
     input: WeeklyReportInput,
     expected: Vec<PerformanceNoteSourceRevision>,
+    expected_report_revision: Option<FileRevision>,
     generated_at: String,
 ) -> Result<WeeklyReportWriteResult, DesktopWriteError> {
-    create_weekly_report_record(selected_write_root(&state)?, input, expected, &generated_at)
-        .map_err(desktop_performance_note_error)
+    create_weekly_report_record(
+        selected_write_root(&state)?,
+        input,
+        expected,
+        expected_report_revision,
+        &generated_at,
+    )
+    .map_err(desktop_performance_note_error)
 }
 
 #[tauri::command]

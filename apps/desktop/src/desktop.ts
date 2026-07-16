@@ -513,6 +513,8 @@ export interface WeeklyReportWritePreview {
   stats: WeeklyReportStats;
   paths: PerformanceNotePaths;
   source_revisions: PerformanceNoteSourceRevision[];
+  report_revision: FileRevision | null;
+  replaces_existing: boolean;
   files: WorkItemFileChange[];
 }
 
@@ -522,6 +524,7 @@ export interface WeeklyReportWriteResult {
   stats: WeeklyReportStats;
   paths: PerformanceNotePaths;
   source_revisions: PerformanceNoteSourceRevision[];
+  replaced_existing: boolean;
   commit: WorkItemWriteResult["commit"];
 }
 
@@ -675,11 +678,13 @@ export function previewWeeklyReport(input: WeeklyReportInput, generatedAt: strin
 export function createWeeklyReport(
   input: WeeklyReportInput,
   expected: PerformanceNoteSourceRevision[],
+  expectedReportRevision: FileRevision | null,
   generatedAt: string,
 ) {
   return invoke<WeeklyReportWriteResult>("create_weekly_report", {
     input,
     expected,
+    expectedReportRevision,
     generatedAt,
   });
 }

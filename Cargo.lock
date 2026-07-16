@@ -5329,7 +5329,7 @@ checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
 
 [[package]]
 name = "work-harvest-cli"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "chrono",
  "serde",
@@ -5341,7 +5341,7 @@ dependencies = [
 
 [[package]]
 name = "work-harvest-core"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "chrono",
  "chrono-tz",
@@ -5357,7 +5357,7 @@ dependencies = [
 
 [[package]]
 name = "work-harvest-desktop"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "notify",
  "serde",
@@ -5374,7 +5374,7 @@ dependencies = [
 
 [[package]]
 name = "work-harvest-write-helper"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "serde",
  "serde_json",

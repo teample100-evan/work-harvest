@@ -4,6 +4,7 @@ import {
   desktopWriteError,
   previewWeeklyReport,
   type DesktopWriteError,
+  type FileRevision,
   type PerformanceNoteSourceRevision,
   type WeeklyReportInput,
   type WeeklyReportWritePreview,
@@ -23,6 +24,7 @@ interface WeeklyReportEditorProps {
 interface PendingWeeklyReport {
   input: WeeklyReportInput;
   expected: PerformanceNoteSourceRevision[];
+  reportRevision: FileRevision | null;
   generatedAt: string;
 }
 
@@ -86,6 +88,7 @@ export function WeeklyReportEditor({
       setPending({
         input: { ...input, output: nextPreview.paths.report },
         expected: nextPreview.source_revisions,
+        reportRevision: nextPreview.report_revision,
         generatedAt,
       });
       setReviewedMarkdown(nextPreview.files[0]?.after ?? "");
@@ -96,12 +99,21 @@ export function WeeklyReportEditor({
 
   async function commitChanges() {
     if (!pending) return;
+    if (
+      preview?.replaces_existing &&
+      !window.confirm(
+        "같은 기간의 기존 주간 보고서를 새 내용으로 덮어쓸까요? 검토한 기존 파일 revision과 일치할 때만 저장됩니다.",
+      )
+    ) {
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
       const result = await createWeeklyReport(
         { ...pending.input, markdown: reviewedMarkdown },
         pending.expected,
+        pending.reportRevision,
         pending.generatedAt,
       );
       onCreated(result.paths.report);
@@ -123,6 +135,7 @@ export function WeeklyReportEditor({
         `기록 ${stats.checkpoint_count}개`,
         `Git 커밋 ${stats.git_commit_count}개`,
         `검증 ${stats.verification_count}개`,
+        preview.replaces_existing ? "기존 보고서 덮어쓰기" : "새 보고서 생성",
         stats.redacted_checkpoint_count > 0
           ? `민감 ${stats.redacted_checkpoint_count}개 세부 정보 생략`
           : null,
@@ -174,7 +187,7 @@ export function WeeklyReportEditor({
             defaultView="document"
             documentValue={reviewedMarkdown}
             onDocumentChange={setReviewedMarkdown}
-            commitLabel="보고서 저장 후 열기"
+            commitLabel={preview.replaces_existing ? "기존 보고서 덮어쓰기" : "보고서 저장 후 열기"}
             onBack={() => {
               setPreview(null);
               setPending(null);
@@ -199,13 +212,13 @@ export function WeeklyReportEditor({
                   <span className="eyebrow">Period</span>
                   <h3 id="weekly-report-source-title">보고할 기간 선택</h3>
                 </div>
-                <span className="editor-preserved">기존 보고서는 덮어쓰지 않습니다</span>
+                <span className="editor-preserved">기존 보고서는 변경 비교 후 확인합니다</span>
               </div>
               <p className="editor-helper">
                 실제 작업 기간이 선택 범위와 겹치는 체크포인트를 업무별로 묶습니다. Git 커밋과 테스트·빌드·lint·수동 검증 결과도 기록에서 자동 집계합니다.
               </p>
               <p className="editor-policy-note">
-                앱이 테스트를 임의로 실행하지는 않습니다. 민감 기록은 세부 근거를 숨기고 제한 기록은 보고서에서 제외합니다.
+                같은 경로의 보고서가 있으면 기존 내용과 새 초안을 비교한 뒤 덮어쓸지 묻습니다. 앱이 테스트를 임의로 실행하지는 않습니다.
               </p>
               <div className="editor-grid">
                 <label className="editor-field">

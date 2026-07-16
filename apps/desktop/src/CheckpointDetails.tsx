@@ -1,6 +1,11 @@
 import type { CheckpointSummary } from "./desktop";
 import { ChevronRight, ExternalLink } from "lucide-react";
 import { useState } from "react";
+import {
+  formatDecisionStatus,
+  formatVerificationKind,
+  formatVerificationStatus,
+} from "./features/dashboard/presentation";
 
 interface CheckpointDetailsProps {
   checkpoint: CheckpointSummary;
@@ -112,7 +117,7 @@ export function CheckpointDetails({
                   <article key={`${decision.summary}-${decision.status}`}>
                     <strong>{decision.summary}</strong>
                     <p>{decision.rationale}</p>
-                    <span>{decision.status}</span>
+                    <span>{formatDecisionStatus(decision.status)}</span>
                   </article>
                 ))}
               </div>
@@ -163,7 +168,7 @@ export function CheckpointDetails({
                           <div>
                             <strong>{verification.description}</strong>
                             <span className={`verification verification-${verification.status}`}>
-                              {verification.kind} · {verification.status}
+                              {formatVerificationKind(verification.kind)} · {formatVerificationStatus(verification.status)}
                             </span>
                           </div>
                           {verification.command && <code>{verification.command}</code>}

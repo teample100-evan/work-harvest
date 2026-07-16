@@ -49,6 +49,7 @@ export function PerformanceNoteEditor({
   const [output, setOutput] = useState("");
   const [preview, setPreview] = useState<PerformanceNoteWritePreview | null>(null);
   const [pending, setPending] = useState<PendingPerformanceNote | null>(null);
+  const [reviewedMarkdown, setReviewedMarkdown] = useState("");
   const [error, setError] = useState<DesktopWriteError | null>(null);
   const [saving, setSaving] = useState(false);
   const isDirty = output.trim().length > 0 || preview !== null;
@@ -75,6 +76,7 @@ export function PerformanceNoteEditor({
         expected: nextPreview.source_revisions,
         generatedAt,
       });
+      setReviewedMarkdown(nextPreview.files[0]?.after ?? "");
     } catch (nextError) {
       setError(desktopWriteError(nextError));
     }
@@ -86,7 +88,7 @@ export function PerformanceNoteEditor({
     setError(null);
     try {
       const result = await createPerformanceNote(
-        pending.input,
+        { ...pending.input, markdown: reviewedMarkdown },
         pending.expected,
         pending.generatedAt,
       );
@@ -144,13 +146,25 @@ export function PerformanceNoteEditor({
               eyebrow="성과 노트 생성 전 검토"
               title={preview.work_item.title}
               identity={preview.paths.report}
-              status={`체크포인트 ${preview.checkpoint_count}개`}
+              status={[
+                `포함 ${preview.checkpoint_count}개`,
+                preview.redacted_checkpoint_count > 0
+                  ? `민감 ${preview.redacted_checkpoint_count}개 세부 정보 생략`
+                  : null,
+                preview.excluded_checkpoint_count > 0
+                  ? `제한 ${preview.excluded_checkpoint_count}개 제외`
+                  : null,
+              ].filter(Boolean).join(" · ")}
               files={preview.files}
               saving={saving}
+              defaultView="document"
+              documentValue={reviewedMarkdown}
+              onDocumentChange={setReviewedMarkdown}
               commitLabel="성과 노트 생성 후 열기"
               onBack={() => {
                 setPreview(null);
                 setPending(null);
+                setReviewedMarkdown("");
               }}
               onCommit={commitChanges}
             />
@@ -166,6 +180,9 @@ export function PerformanceNoteEditor({
                 </div>
                 <p className="editor-helper">
                   <code>{workItemId}</code>의 업무 메타데이터, 현재 Context와 모든 체크포인트를 합쳐 13개 섹션의 Markdown 초안을 만듭니다. 근거가 없는 내용은 미확인으로 남깁니다.
+                </p>
+                <p className="editor-policy-note">
+                  민감 체크포인트는 요약·결과만 포함하고 세부 근거를 생략합니다. 제한 체크포인트는 초안에서 완전히 제외합니다.
                 </p>
                 <div className="editor-grid">
                   <label className="editor-field full">

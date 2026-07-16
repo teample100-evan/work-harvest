@@ -1,5 +1,17 @@
 import { invoke } from "@tauri-apps/api/core";
 
+export interface BuildInfo {
+  version: string;
+  commit: string;
+  dirty: boolean;
+  built_at_unix: number;
+  profile: "debug" | "release";
+}
+
+export function getBuildInfo() {
+  return invoke<BuildInfo>("get_build_info");
+}
+
 export interface DataRootCounts {
   work_items: number;
   contexts: number;
@@ -19,8 +31,10 @@ export interface WorkItemSummary {
   title: string;
   status: string;
   updated_at: string;
+  activity_dates: string[];
   current_state: string | null;
   last_checkpoint_id: string | null;
+  last_checkpoint_confidentiality: "normal" | "sensitive" | "restricted" | null;
 }
 
 export interface DataRootSnapshot {
@@ -29,6 +43,7 @@ export interface DataRootSnapshot {
   issues: DataIssue[];
   work_items: WorkItemSummary[];
   checkpoint_ids: string[];
+  restricted_checkpoint_ids: string[];
 }
 
 export interface DataRootUpdate {
@@ -110,6 +125,7 @@ export interface CheckpointSummary {
   title: string;
   summary: string;
   status_after: string;
+  confidentiality: "normal" | "sensitive" | "restricted";
   markdown_path: string;
   activities: string[];
   decisions: CheckpointDecision[];
@@ -438,6 +454,7 @@ export interface CheckpointWriteResult {
 export interface PerformanceNoteInput {
   work_item_id: string;
   output?: string | null;
+  markdown?: string | null;
 }
 
 export interface PerformanceNoteSourceRevision {
@@ -452,6 +469,8 @@ export interface PerformanceNotePaths {
 export interface PerformanceNoteWritePreview {
   work_item: WorkItemDocument;
   checkpoint_count: number;
+  redacted_checkpoint_count: number;
+  excluded_checkpoint_count: number;
   paths: PerformanceNotePaths;
   source_revisions: PerformanceNoteSourceRevision[];
   files: WorkItemFileChange[];
@@ -460,6 +479,8 @@ export interface PerformanceNoteWritePreview {
 export interface PerformanceNoteWriteResult {
   work_item: WorkItemDocument;
   checkpoint_count: number;
+  redacted_checkpoint_count: number;
+  excluded_checkpoint_count: number;
   paths: PerformanceNotePaths;
   source_revisions: PerformanceNoteSourceRevision[];
   commit: WorkItemWriteResult["commit"];

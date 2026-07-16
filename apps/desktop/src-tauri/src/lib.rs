@@ -49,6 +49,32 @@ struct DataRootChange {
     event_count: usize,
 }
 
+#[derive(Clone, Serialize)]
+struct BuildInfo {
+    version: &'static str,
+    commit: &'static str,
+    dirty: bool,
+    built_at_unix: u64,
+    profile: &'static str,
+}
+
+#[tauri::command]
+fn get_build_info() -> BuildInfo {
+    BuildInfo {
+        version: env!("CARGO_PKG_VERSION"),
+        commit: option_env!("WORK_HARVEST_BUILD_COMMIT").unwrap_or("unknown"),
+        dirty: option_env!("WORK_HARVEST_BUILD_DIRTY") == Some("true"),
+        built_at_unix: option_env!("WORK_HARVEST_BUILT_AT_UNIX")
+            .and_then(|value| value.parse().ok())
+            .unwrap_or_default(),
+        profile: if cfg!(debug_assertions) {
+            "debug"
+        } else {
+            "release"
+        },
+    }
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 enum DesktopWriteErrorKind {
@@ -527,6 +553,7 @@ pub fn run() {
         )
         .manage(DesktopState::default())
         .invoke_handler(tauri::generate_handler![
+            get_build_info,
             set_data_root,
             inspect_data_root,
             get_work_item_detail,

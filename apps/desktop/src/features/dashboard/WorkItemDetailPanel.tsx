@@ -5,6 +5,9 @@ import { DetailList } from "./DetailList";
 import {
   formatTimestamp,
   formatCheckpointKind,
+  formatConfidentiality,
+  formatVerificationKind,
+  formatVerificationStatus,
   formatWorkItemStatus,
   needsWorkItemStatusBadge,
 } from "./presentation";
@@ -166,6 +169,11 @@ export function WorkItemDetailPanel({
                         <span>{formatTimestamp(checkpoint.captured_at)}</span>
                         <span>{formatCheckpointKind(checkpoint.kind)}</span>
                         <span>{formatWorkItemStatus(checkpoint.status_after)}</span>
+                        {checkpoint.confidentiality !== "normal" ? (
+                          <span className={`confidentiality confidentiality-${checkpoint.confidentiality}`}>
+                            {formatConfidentiality(checkpoint.confidentiality)}
+                          </span>
+                        ) : null}
                       </div>
                       <h4>{checkpoint.title}</h4>
                       <p>{checkpoint.summary}</p>
@@ -176,7 +184,7 @@ export function WorkItemDetailPanel({
                               className={`verification verification-${verification.status}`}
                               key={`${checkpoint.id}-${verification.kind}-${verification.description}`}
                             >
-                              {verification.kind} · {verification.status}
+                              {formatVerificationKind(verification.kind)} · {formatVerificationStatus(verification.status)}
                             </span>
                           ))}
                         </div>

@@ -101,13 +101,18 @@ export function Dashboard({ controller }: DashboardProps) {
                   </div>
                 </>
               ) : (
-                <button className="main-back-button" onClick={() => setMainView("list")} type="button">
+                <button
+                  aria-label={`${controller.detail?.title ?? "선택한 업무"}에서 업무 목록으로 돌아가기`}
+                  className="main-back-button"
+                  onClick={() => setMainView("list")}
+                  type="button"
+                >
                   <ArrowLeft aria-hidden="true" size={17} strokeWidth={1.8} />
                   <span>
                     <small>
                       {controller.dateFilter ? formatWorkDateLong(controller.dateFilter) : "업무 목록"}
                     </small>
-                    <strong>업무 목록으로 돌아가기</strong>
+                    <strong>{controller.detail?.title ?? "업무 목록으로 돌아가기"}</strong>
                   </span>
                 </button>
               )}

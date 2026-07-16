@@ -2,6 +2,8 @@
 
 이 문서는 [작업 방법론](./work-method.md)을 구현하기 위한 버전 1.0 데이터 계약을 설명한다.
 
+체크포인트의 `confidentiality` 처리 규칙은 [체크포인트 기밀 정책](./confidentiality-policy.md)을 따른다.
+
 ## 원본과 파생 데이터
 
 | 데이터 | 변경 정책 | 역할 |

@@ -16,7 +16,7 @@ import {
 } from "../../desktop";
 import { useSnapshotNotifications } from "../../useSnapshotNotifications";
 import { friendlyError } from "./presentation";
-import { workItemDateKey } from "./workItemDates";
+import { workItemMatchesDate, workItemPrimaryDateKey } from "./workItemDates";
 
 const DATA_ROOT_KEY = "work-harvest:data-root";
 
@@ -199,9 +199,9 @@ export function useWorkspaceController() {
 
     const hasSelectedDate =
       dateFilter !== null &&
-      snapshot.work_items.some((item) => workItemDateKey(item.updated_at) === dateFilter);
+      snapshot.work_items.some((item) => workItemMatchesDate(item, dateFilter));
     if (!hasSelectedDate) {
-      setDateFilter(workItemDateKey(nextSelectedItem.updated_at));
+      setDateFilter(workItemPrimaryDateKey(nextSelectedItem));
     }
   }, [dateFilter, selectedWorkItemId, snapshot]);
 
@@ -241,7 +241,7 @@ export function useWorkspaceController() {
     const normalizedQuery = query.trim().toLocaleLowerCase("ko-KR");
     return (snapshot?.work_items ?? []).filter((item) => {
       const matchesDate =
-        dateFilter === null || workItemDateKey(item.updated_at) === dateFilter;
+        dateFilter === null || workItemMatchesDate(item, dateFilter);
       const matchesStatus = statusFilter === "all" || item.status === statusFilter;
       const matchesQuery =
         normalizedQuery.length === 0 ||

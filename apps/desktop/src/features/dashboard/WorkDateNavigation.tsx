@@ -15,7 +15,7 @@ export function WorkDateNavigation({
   const monthGroups = groupWorkItemDates(items);
 
   return (
-    <nav className="work-date-navigation" aria-label="업무 날짜 탐색">
+    <nav className="work-date-navigation" aria-label="작업 기록 날짜 탐색">
       {monthGroups.map((month) => (
         <section className="date-month-group" key={month.key}>
           <h2>{month.label}</h2>

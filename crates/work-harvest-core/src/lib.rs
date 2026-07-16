@@ -39,6 +39,7 @@ pub use write::{
     read_file_revision,
 };
 
+use chrono::NaiveDate;
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -105,8 +106,10 @@ pub struct WorkItemSummary {
     pub title: String,
     pub status: String,
     pub updated_at: String,
+    pub activity_dates: Vec<String>,
     pub current_state: Option<String>,
     pub last_checkpoint_id: Option<String>,
+    pub last_checkpoint_confidentiality: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -116,6 +119,7 @@ pub struct DataRootSnapshot {
     pub issues: Vec<DataIssue>,
     pub work_items: Vec<WorkItemSummary>,
     pub checkpoint_ids: Vec<String>,
+    pub restricted_checkpoint_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -216,6 +220,7 @@ pub struct CheckpointSummary {
     pub title: String,
     pub summary: String,
     pub status_after: String,
+    pub confidentiality: String,
     pub markdown_path: String,
     pub activities: Vec<String>,
     pub decisions: Vec<CheckpointDecision>,
@@ -413,6 +418,7 @@ fn inspect_work_item(
         title,
         status,
         updated_at,
+        activity_dates: Vec::new(),
         current_state: context
             .and_then(|value| value.get("current_state"))
             .and_then(Value::as_str)
@@ -421,7 +427,43 @@ fn inspect_work_item(
             .and_then(|value| value.get("last_checkpoint_id"))
             .and_then(Value::as_str)
             .map(str::to_string),
+        last_checkpoint_confidentiality: None,
     })
+}
+
+fn checkpoint_activity_dates(value: &Value) -> Vec<String> {
+    fn parse_date(value: Option<&Value>) -> Option<NaiveDate> {
+        let value = value?.as_str()?;
+        let prefix = value.get(..10)?;
+        NaiveDate::parse_from_str(prefix, "%Y-%m-%d").ok()
+    }
+
+    let work_period = value.get("work_period").unwrap_or(&Value::Null);
+    let start = parse_date(work_period.get("start"));
+    let end = parse_date(work_period.get("end"));
+    match (start, end) {
+        (Some(start), Some(end)) if start <= end => {
+            let span = end.signed_duration_since(start).num_days();
+            if span > 366 {
+                return vec![start.to_string(), end.to_string()];
+            }
+            let mut dates = Vec::with_capacity(span as usize + 1);
+            let mut date = start;
+            loop {
+                dates.push(date.to_string());
+                if date == end {
+                    break;
+                }
+                let Some(next) = date.succ_opt() else {
+                    break;
+                };
+                date = next;
+            }
+            dates
+        }
+        (Some(date), _) | (_, Some(date)) => vec![date.to_string()],
+        _ => Vec::new(),
+    }
 }
 
 fn string_field(value: &Value, field: &str) -> String {
@@ -531,6 +573,7 @@ fn checkpoint_summary(root: &Path, path: &Path, value: &Value) -> CheckpointSumm
         title: string_field(value, "title"),
         summary: string_field(value, "summary"),
         status_after: string_field(value, "status_after"),
+        confidentiality: string_field(value, "confidentiality"),
         markdown_path: relative_path(root, &path.with_extension("md")),
         activities: string_array(value, "activities"),
         decisions,
@@ -768,6 +811,7 @@ impl DataRootIndex {
                 issues: Vec::new(),
                 work_items: Vec::new(),
                 checkpoint_ids: Vec::new(),
+                restricted_checkpoint_ids: Vec::new(),
             },
             root,
             documents,
@@ -1028,6 +1072,9 @@ impl DataRootIndex {
         }
 
         let mut checkpoint_ids = HashSet::new();
+        let mut restricted_checkpoint_ids = BTreeSet::new();
+        let mut checkpoint_confidentiality = HashMap::new();
+        let mut activity_dates_by_work_item: HashMap<String, BTreeSet<String>> = HashMap::new();
         for (path, document) in &checkpoint_files {
             let Some(value) = &document.value else {
                 continue;
@@ -1043,6 +1090,11 @@ impl DataRootIndex {
             let work_item_id =
                 required_string(&self.root, path, value, "work_item_id", &mut issues);
             let project_id = required_string(&self.root, path, value, "project_id", &mut issues);
+            let confidentiality = value
+                .get("confidentiality")
+                .and_then(Value::as_str)
+                .unwrap_or("normal")
+                .to_string();
             if let Some(checkpoint_id) = checkpoint_id {
                 if !checkpoint_ids.insert(checkpoint_id.clone()) {
                     issues.push(issue(
@@ -1052,8 +1104,16 @@ impl DataRootIndex {
                         format!("중복 체크포인트 ID입니다: {checkpoint_id}"),
                     ));
                 }
+                if confidentiality == "restricted" {
+                    restricted_checkpoint_ids.insert(checkpoint_id.clone());
+                }
+                checkpoint_confidentiality.insert(checkpoint_id, confidentiality.clone());
             }
             if let Some(work_item_id) = work_item_id {
+                activity_dates_by_work_item
+                    .entry(work_item_id.clone())
+                    .or_default()
+                    .extend(checkpoint_activity_dates(value));
                 match work_item_projects.get(&work_item_id) {
                     None => issues.push(issue(
                         &self.root,
@@ -1083,6 +1143,18 @@ impl DataRootIndex {
             }
         }
 
+        for work_item in &mut work_items {
+            work_item.activity_dates = activity_dates_by_work_item
+                .remove(&work_item.id)
+                .map(|dates| dates.into_iter().collect())
+                .unwrap_or_default();
+            work_item.last_checkpoint_confidentiality = work_item
+                .last_checkpoint_id
+                .as_ref()
+                .and_then(|id| checkpoint_confidentiality.get(id))
+                .cloned();
+        }
+
         work_items.sort_by(|left, right| {
             right
                 .updated_at
@@ -1107,6 +1179,7 @@ impl DataRootIndex {
             issues,
             work_items,
             checkpoint_ids,
+            restricted_checkpoint_ids: restricted_checkpoint_ids.into_iter().collect(),
         }
     }
 }
@@ -1162,7 +1235,15 @@ mod tests {
         );
         assert!(snapshot.issues.is_empty());
         assert_eq!(snapshot.checkpoint_ids, ["CP-20260713-001"]);
+        assert_eq!(snapshot.restricted_checkpoint_ids, Vec::<String>::new());
         assert_eq!(snapshot.work_items[0].id, "AUTH-142");
+        assert_eq!(snapshot.work_items[0].activity_dates, ["2026-07-13"]);
+        assert_eq!(
+            snapshot.work_items[0]
+                .last_checkpoint_confidentiality
+                .as_deref(),
+            Some("normal")
+        );
         assert_eq!(
             snapshot.work_items[0].current_state.as_deref(),
             Some(

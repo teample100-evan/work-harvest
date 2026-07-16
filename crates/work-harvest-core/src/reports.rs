@@ -1,4 +1,6 @@
-use crate::checkpoints::{CheckpointDocument, CheckpointWriteError, validate_checkpoint};
+use crate::checkpoints::{
+    CheckpointDocument, CheckpointEvidenceDocument, CheckpointWriteError, validate_checkpoint,
+};
 use crate::work_items::{
     WorkContextDocument, WorkItemChangeOperation, WorkItemDocument, WorkItemFileChange,
     WorkItemPaths, WorkItemWriteError, paths as work_item_paths, validate_documents,
@@ -48,6 +50,7 @@ pub enum PerformanceNoteWriteError {
 pub struct PerformanceNoteInput {
     pub work_item_id: String,
     pub output: Option<String>,
+    pub markdown: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -71,6 +74,8 @@ pub struct PerformanceNoteCheckpoint {
 pub struct PerformanceNoteWritePreview {
     pub work_item: WorkItemDocument,
     pub checkpoint_count: usize,
+    pub redacted_checkpoint_count: usize,
+    pub excluded_checkpoint_count: usize,
     pub paths: PerformanceNotePaths,
     pub source_revisions: Vec<PerformanceNoteSourceRevision>,
     pub files: Vec<WorkItemFileChange>,
@@ -80,6 +85,8 @@ pub struct PerformanceNoteWritePreview {
 pub struct PerformanceNoteWriteResult {
     pub work_item: WorkItemDocument,
     pub checkpoint_count: usize,
+    pub redacted_checkpoint_count: usize,
+    pub excluded_checkpoint_count: usize,
     pub paths: PerformanceNotePaths,
     pub source_revisions: Vec<PerformanceNoteSourceRevision>,
     pub commit: WriteCommit,
@@ -97,6 +104,8 @@ struct StoredCheckpoint {
 struct PreparedPerformanceNote {
     work_item: WorkItemDocument,
     checkpoint_count: usize,
+    redacted_checkpoint_count: usize,
+    excluded_checkpoint_count: usize,
     paths: PerformanceNotePaths,
     source_revisions: Vec<PerformanceNoteSourceRevision>,
     markdown: String,
@@ -223,6 +232,44 @@ fn load_checkpoints(root: &Path) -> Result<Vec<StoredCheckpoint>, PerformanceNot
         });
     }
     Ok(checkpoints)
+}
+
+fn checkpoint_for_report(entry: &StoredCheckpoint) -> Option<PerformanceNoteCheckpoint> {
+    if entry.checkpoint.confidentiality == "restricted" {
+        return None;
+    }
+
+    let mut checkpoint = entry.checkpoint.clone();
+    if checkpoint.confidentiality == "sensitive" {
+        checkpoint.activities =
+            vec!["민감 기록의 세부 활동은 보고서에서 생략했습니다.".to_string()];
+        checkpoint.decisions.clear();
+        checkpoint.blockers.clear();
+        checkpoint.next_steps.clear();
+        checkpoint.evidence = CheckpointEvidenceDocument {
+            commits: Vec::new(),
+            pull_requests: Vec::new(),
+            issues: Vec::new(),
+            files: Vec::new(),
+            commands: Vec::new(),
+            urls: Vec::new(),
+        };
+        checkpoint.git = None;
+        checkpoint.source.session_ref = None;
+        checkpoint.source.task_title = None;
+        for verification in &mut checkpoint.verifications {
+            verification.command = None;
+            verification.evidence_refs.clear();
+        }
+        for outcome in &mut checkpoint.outcomes {
+            outcome.evidence_refs.clear();
+        }
+    }
+
+    Some(PerformanceNoteCheckpoint {
+        checkpoint,
+        markdown_path: entry.markdown_path.clone(),
+    })
 }
 
 fn js_value_string(value: &Value) -> String {
@@ -428,6 +475,14 @@ pub fn render_performance_note(
         .iter()
         .map(|entry| entry.checkpoint.id.clone())
         .collect::<Vec<_>>();
+    let report_confidentiality = if checkpoints
+        .iter()
+        .any(|entry| entry.checkpoint.confidentiality == "sensitive")
+    {
+        "sensitive"
+    } else {
+        "normal"
+    };
     let related_notes = checkpoints
         .iter()
         .map(|entry| entry.markdown_path.clone())
@@ -452,6 +507,7 @@ work_item_id: {}
 project_id: {}
 generated_from_checkpoints: {}
 generated_at: {}
+confidentiality: {report_confidentiality}
 ---
 
 # {} 성과 노트
@@ -661,6 +717,29 @@ fn normalize_output_path(value: &str) -> Result<PathBuf, PerformanceNoteWriteErr
     Ok(path)
 }
 
+fn validate_report_confidentiality(
+    markdown: &str,
+    expected: &str,
+) -> Result<(), PerformanceNoteWriteError> {
+    let frontmatter = markdown
+        .strip_prefix("---\n")
+        .and_then(|value| value.split_once("\n---"))
+        .map(|(frontmatter, _)| frontmatter);
+    let actual = frontmatter.and_then(|frontmatter| {
+        frontmatter.lines().find_map(|line| {
+            line.strip_prefix("confidentiality:")
+                .map(str::trim)
+                .map(|value| value.trim_matches(['\"', '\'']))
+        })
+    });
+    if actual != Some(expected) {
+        return Err(PerformanceNoteWriteError::InvalidInput(format!(
+            "report Markdown must preserve confidentiality: {expected}"
+        )));
+    }
+    Ok(())
+}
+
 fn prepare_performance_note(
     writer: &DataRootWriter,
     input: PerformanceNoteInput,
@@ -668,7 +747,19 @@ fn prepare_performance_note(
 ) -> Result<PreparedPerformanceNote, PerformanceNoteWriteError> {
     let snapshot = read_performance_note_sources(writer.root(), &input.work_item_id)?;
     let checkpoints = sorted_checkpoints(writer.root(), &input.work_item_id)?;
-    let date = checkpoints
+    let report_checkpoints = checkpoints
+        .iter()
+        .filter_map(checkpoint_for_report)
+        .collect::<Vec<_>>();
+    let redacted_checkpoint_count = checkpoints
+        .iter()
+        .filter(|entry| entry.checkpoint.confidentiality == "sensitive")
+        .count();
+    let excluded_checkpoint_count = checkpoints
+        .iter()
+        .filter(|entry| entry.checkpoint.confidentiality == "restricted")
+        .count();
+    let date = report_checkpoints
         .last()
         .and_then(|entry| entry.checkpoint.work_period.end.as_str())
         .or_else(|| generated_at.get(0..10))
@@ -706,22 +797,27 @@ fn prepare_performance_note(
         });
     }
     source_revisions.sort_by(|left, right| left.path.cmp(&right.path));
-    let report_checkpoints = checkpoints
-        .into_iter()
-        .map(|entry| PerformanceNoteCheckpoint {
-            checkpoint: entry.checkpoint,
-            markdown_path: entry.markdown_path,
-        })
-        .collect::<Vec<_>>();
-    let markdown = render_performance_note(
-        &snapshot.work_item,
-        &snapshot.context,
-        &report_checkpoints,
-        generated_at,
-    );
+    let markdown = input.markdown.unwrap_or_else(|| {
+        render_performance_note(
+            &snapshot.work_item,
+            &snapshot.context,
+            &report_checkpoints,
+            generated_at,
+        )
+    });
+    validate_report_confidentiality(
+        &markdown,
+        if redacted_checkpoint_count > 0 {
+            "sensitive"
+        } else {
+            "normal"
+        },
+    )?;
     Ok(PreparedPerformanceNote {
         work_item: snapshot.work_item,
         checkpoint_count: report_checkpoints.len(),
+        redacted_checkpoint_count,
+        excluded_checkpoint_count,
         paths: PerformanceNotePaths { report: output },
         source_revisions,
         markdown,
@@ -813,6 +909,8 @@ pub fn preview_performance_note(
     Ok(PerformanceNoteWritePreview {
         work_item: prepared.work_item,
         checkpoint_count: prepared.checkpoint_count,
+        redacted_checkpoint_count: prepared.redacted_checkpoint_count,
+        excluded_checkpoint_count: prepared.excluded_checkpoint_count,
         paths: prepared.paths.clone(),
         source_revisions: prepared.source_revisions,
         files: vec![WorkItemFileChange {
@@ -855,6 +953,8 @@ fn commit_performance_note(
     Ok(PerformanceNoteWriteResult {
         work_item: prepared.work_item,
         checkpoint_count: prepared.checkpoint_count,
+        redacted_checkpoint_count: prepared.redacted_checkpoint_count,
+        excluded_checkpoint_count: prepared.excluded_checkpoint_count,
         paths: prepared.paths,
         source_revisions: prepared.source_revisions,
         commit,
@@ -951,6 +1051,7 @@ mod tests {
         PerformanceNoteInput {
             work_item_id: "AUTH-142".to_string(),
             output: None,
+            markdown: None,
         }
     }
 
@@ -989,6 +1090,8 @@ mod tests {
         seed_examples(directory.path());
         let preview = preview_performance_note(directory.path(), input(), GENERATED_AT).unwrap();
         assert_eq!(preview.checkpoint_count, 1);
+        assert_eq!(preview.redacted_checkpoint_count, 0);
+        assert_eq!(preview.excluded_checkpoint_count, 0);
         assert_eq!(preview.files.len(), 1);
         assert_eq!(preview.source_revisions.len(), 3);
         assert_eq!(
@@ -1008,6 +1111,96 @@ mod tests {
         assert_eq!(
             fs::read_to_string(directory.path().join(&result.paths.report)).unwrap(),
             preview.files[0].after
+        );
+    }
+
+    #[test]
+    fn performance_note_redacts_sensitive_and_excludes_restricted_checkpoints() {
+        let directory = tempdir().unwrap();
+        seed_examples(directory.path());
+        let checkpoint_path = directory
+            .path()
+            .join("records/2026/07/13/CP-20260713-001.json");
+        let mut sensitive: Value =
+            serde_json::from_str(&fs::read_to_string(&checkpoint_path).unwrap()).unwrap();
+        sensitive["confidentiality"] = Value::String("sensitive".to_string());
+        fs::write(
+            &checkpoint_path,
+            serde_json::to_string_pretty(&sensitive).unwrap(),
+        )
+        .unwrap();
+
+        let mut restricted = sensitive.clone();
+        restricted["id"] = Value::String("CP-20260714-002".to_string());
+        restricted["captured_at"] = Value::String("2026-07-14T18:10:00+09:00".to_string());
+        restricted["work_period"]["start"] = Value::String("2026-07-14".to_string());
+        restricted["work_period"]["end"] = Value::String("2026-07-14".to_string());
+        restricted["title"] = Value::String("제한 제목 노출 금지".to_string());
+        restricted["summary"] = Value::String("제한 요약 노출 금지".to_string());
+        restricted["confidentiality"] = Value::String("restricted".to_string());
+        let restricted_path = directory
+            .path()
+            .join("records/2026/07/14/CP-20260714-002.json");
+        fs::create_dir_all(restricted_path.parent().unwrap()).unwrap();
+        fs::write(
+            &restricted_path,
+            serde_json::to_string_pretty(&restricted).unwrap(),
+        )
+        .unwrap();
+
+        let preview = preview_performance_note(directory.path(), input(), GENERATED_AT).unwrap();
+        let markdown = &preview.files[0].after;
+
+        assert_eq!(preview.checkpoint_count, 1);
+        assert_eq!(preview.redacted_checkpoint_count, 1);
+        assert_eq!(preview.excluded_checkpoint_count, 1);
+        assert_eq!(preview.source_revisions.len(), 4);
+        assert!(markdown.contains("refresh token 갱신과 요청 재시도의 기본 성공 경로"));
+        assert!(markdown.contains("민감 기록의 세부 활동은 보고서에서 생략했습니다."));
+        assert!(!markdown.contains("pnpm test auth"));
+        assert!(!markdown.contains("abc1234"));
+        assert!(!markdown.contains("제한 제목 노출 금지"));
+        assert!(!markdown.contains("제한 요약 노출 금지"));
+
+        let error = create_performance_note(
+            directory.path(),
+            PerformanceNoteInput {
+                work_item_id: "AUTH-142".to_string(),
+                output: Some(preview.paths.report.clone()),
+                markdown: Some(
+                    markdown.replace("confidentiality: sensitive", "confidentiality: normal"),
+                ),
+            },
+            preview.source_revisions.clone(),
+            GENERATED_AT,
+        )
+        .unwrap_err();
+        assert!(matches!(error, PerformanceNoteWriteError::InvalidInput(_)));
+        assert!(!directory.path().join(&preview.paths.report).exists());
+    }
+
+    #[test]
+    fn reviewed_markdown_is_committed_without_regeneration() {
+        let directory = tempdir().unwrap();
+        seed_examples(directory.path());
+        let preview = preview_performance_note(directory.path(), input(), GENERATED_AT).unwrap();
+        let reviewed =
+            "---\nconfidentiality: normal\n---\n\n# 사용자가 검토한 성과 노트\n\n- 확정된 결과\n";
+        let result = create_performance_note(
+            directory.path(),
+            PerformanceNoteInput {
+                work_item_id: "AUTH-142".to_string(),
+                output: Some(preview.paths.report.clone()),
+                markdown: Some(reviewed.to_string()),
+            },
+            preview.source_revisions,
+            GENERATED_AT,
+        )
+        .unwrap();
+
+        assert_eq!(
+            fs::read_to_string(directory.path().join(result.paths.report)).unwrap(),
+            reviewed
         );
     }
 
@@ -1046,6 +1239,7 @@ mod tests {
         let input = PerformanceNoteInput {
             work_item_id: "AUTH-142".to_string(),
             output: Some("reports/performance-notes/reviewed.md".to_string()),
+            markdown: None,
         };
         let preview =
             preview_performance_note(directory.path(), input.clone(), GENERATED_AT).unwrap();

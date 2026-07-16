@@ -27,6 +27,7 @@ import { EditorDialog } from "./ui/EditorDialog";
 import { ProjectCombobox } from "./ui/ProjectCombobox";
 import { SelectMenu } from "./ui/SelectMenu";
 import { TokenInput } from "./ui/TokenInput";
+import { clearControlValidation, validateControls } from "./ui/formValidation";
 
 interface WorkItemEditorProps {
   mode: "create" | "edit";
@@ -342,6 +343,7 @@ export function WorkItemEditor({
   const [error, setError] = useState<DesktopWriteError | null>(null);
   const [loading, setLoading] = useState(mode === "edit");
   const [saving, setSaving] = useState(false);
+  const [validationMessage, setValidationMessage] = useState<string | null>(null);
   const [loadVersion, setLoadVersion] = useState(0);
 
   const patch = mode === "edit" && snapshot ? updatePatch(draft, snapshot) : null;
@@ -421,6 +423,9 @@ export function WorkItemEditor({
   async function reviewChanges(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
+    const nextValidationMessage = validateControls(event.currentTarget);
+    setValidationMessage(nextValidationMessage);
+    if (nextValidationMessage) return;
 
     const now = new Date().toISOString();
     try {
@@ -550,7 +555,21 @@ export function WorkItemEditor({
               onCommit={commitChanges}
             />
           ) : (
-            <form className="editor-form" onSubmit={reviewChanges} onChange={() => setError(null)}>
+            <form
+              className="editor-form"
+              noValidate
+              onSubmit={reviewChanges}
+              onChange={(event) => {
+                clearControlValidation(event.target);
+                setValidationMessage(null);
+                setError(null);
+              }}
+            >
+              {validationMessage ? (
+                <div className="editor-inline-validation" role="alert">
+                  {validationMessage}
+                </div>
+              ) : null}
               {mode === "create" ? (
                 <>
                   <section className="editor-section editor-scenario-section" aria-labelledby="create-scenario-title">

@@ -274,6 +274,8 @@ struct CheckpointCaptureOutput {
 struct PerformanceNoteOutput {
     work_item: WorkItemDocument,
     checkpoint_count: usize,
+    redacted_checkpoint_count: usize,
+    excluded_checkpoint_count: usize,
     paths: work_harvest_core::PerformanceNotePaths,
 }
 
@@ -565,6 +567,7 @@ fn handle_performance_note(args: &[String]) -> Result<(), CliError> {
         PerformanceNoteInput {
             work_item_id: work_item_id.to_string(),
             output: options.output,
+            markdown: None,
         },
         &now_rfc3339(),
     )
@@ -572,14 +575,20 @@ fn handle_performance_note(args: &[String]) -> Result<(), CliError> {
     let output = PerformanceNoteOutput {
         work_item: result.work_item,
         checkpoint_count: result.checkpoint_count,
+        redacted_checkpoint_count: result.redacted_checkpoint_count,
+        excluded_checkpoint_count: result.excluded_checkpoint_count,
         paths: result.paths,
     };
     print_result(
         &output,
         options.json,
         format!(
-            "Created performance note for {}\n  checkpoints: {}\n  report: {}",
-            output.work_item.id, output.checkpoint_count, output.paths.report
+            "Created performance note for {}\n  checkpoints: {} included · {} redacted · {} excluded\n  report: {}",
+            output.work_item.id,
+            output.checkpoint_count,
+            output.redacted_checkpoint_count,
+            output.excluded_checkpoint_count,
+            output.paths.report
         ),
     )
 }

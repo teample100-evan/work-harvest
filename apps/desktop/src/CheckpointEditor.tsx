@@ -19,6 +19,8 @@ import {
 import { Button } from "./ui/Button";
 import { EditorDialog } from "./ui/EditorDialog";
 import { SelectMenu } from "./ui/SelectMenu";
+import { formatWorkItemStatus } from "./features/dashboard/presentation";
+import { clearControlValidation, validateControls } from "./ui/formValidation";
 
 interface CheckpointEditorProps {
   workItemId: string;
@@ -179,10 +181,10 @@ function initialDraft(snapshot: WorkItemEditSnapshot): CheckpointDraft {
     outcomeImpact: "",
     blockers: "",
     nextSteps: formatLines(snapshot.context.next_steps),
-    evidenceCommits: "",
+    evidenceCommits: snapshot.context.git.commit ?? "",
     evidencePullRequests: "",
     evidenceIssues: "",
-    evidenceFiles: "",
+    evidenceFiles: snapshot.context.files.map((file) => file.path).join("\n"),
     evidenceCommands: "",
     evidenceUrls: "",
     correctionOf: "",
@@ -307,6 +309,7 @@ export function CheckpointEditor({ workItemId, onClose, onSaved }: CheckpointEdi
   const [loadVersion, setLoadVersion] = useState(0);
   const [activeStep, setActiveStep] = useState(0);
   const [furthestStep, setFurthestStep] = useState(0);
+  const [validationMessage, setValidationMessage] = useState<string | null>(null);
   const activeStepRef = useRef<HTMLDivElement>(null);
 
   const isDirty = draft !== null && JSON.stringify(draft) !== initialDraftJson;
@@ -345,18 +348,10 @@ export function CheckpointEditor({ workItemId, onClose, onSaved }: CheckpointEdi
   }
 
   function validateActiveStep() {
-    const controls = activeStepRef.current?.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(
-      "input, select, textarea",
-    );
-    if (!controls) return true;
-    for (const control of controls) {
-      if (!control.checkValidity()) {
-        control.reportValidity();
-        control.focus();
-        return false;
-      }
-    }
-    return true;
+    if (!activeStepRef.current) return true;
+    const message = validateControls(activeStepRef.current);
+    setValidationMessage(message);
+    return message === null;
   }
 
   function advanceStep() {
@@ -368,20 +363,16 @@ export function CheckpointEditor({ workItemId, onClose, onSaved }: CheckpointEdi
 
   function selectStep(step: number) {
     if (step > activeStep && !validateActiveStep()) return;
+    setValidationMessage(null);
     setActiveStep(step);
   }
 
-  async function reviewChanges(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function prepareReview(nextDraft: CheckpointDraft) {
     if (!draft || !snapshot) return;
-    if (activeStep < finalStep) {
-      advanceStep();
-      return;
-    }
     setError(null);
     const now = new Date().toISOString();
     try {
-      const input = checkpointInput(draft, workItemId);
+      const input = checkpointInput(nextDraft, workItemId);
       const nextPreview = await previewCaptureCheckpoint(input, snapshot.revisions, now);
       setPreview(nextPreview);
       setPendingCommit({
@@ -392,6 +383,30 @@ export function CheckpointEditor({ workItemId, onClose, onSaved }: CheckpointEdi
     } catch (nextError) {
       setError(desktopWriteError(nextError));
     }
+  }
+
+  async function reviewChanges(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!draft || !snapshot) return;
+    if (activeStep < finalStep) {
+      advanceStep();
+      return;
+    }
+    await prepareReview(draft);
+  }
+
+  async function quickReview() {
+    if (!draft || !snapshot || !validateActiveStep()) return;
+    const nextDraft = {
+      ...draft,
+      currentState: draft.summary.trim(),
+      outcomes:
+        draft.kind === "final" && draft.outcomes.trim().length === 0
+          ? draft.summary.trim()
+          : draft.outcomes,
+    };
+    setDraft(nextDraft);
+    await prepareReview(nextDraft);
   }
 
   async function commitChanges() {
@@ -462,7 +477,7 @@ export function CheckpointEditor({ workItemId, onClose, onSaved }: CheckpointEdi
               eyebrow="체크포인트 저장 전 검토"
               title={preview.checkpoint.title}
               identity={preview.checkpoint.id}
-              status={preview.checkpoint.status_after}
+              status={formatWorkItemStatus(preview.checkpoint.status_after)}
               files={preview.files}
               saving={saving}
               onBack={() => {
@@ -472,13 +487,27 @@ export function CheckpointEditor({ workItemId, onClose, onSaved }: CheckpointEdi
               onCommit={commitChanges}
             />
           ) : (
-            <form className="editor-form" onSubmit={reviewChanges} onChange={() => setError(null)}>
+            <form
+              className="editor-form"
+              noValidate
+              onSubmit={reviewChanges}
+              onChange={(event) => {
+                clearControlValidation(event.target);
+                setValidationMessage(null);
+                setError(null);
+              }}
+            >
               <CheckpointStepper
                 activeStep={activeStep}
                 furthestStep={furthestStep}
                 steps={checkpointSteps}
                 onSelect={selectStep}
               />
+              {validationMessage ? (
+                <div className="editor-inline-validation" role="alert">
+                  {validationMessage}
+                </div>
+              ) : null}
               <div className="checkpoint-step-content" ref={activeStepRef}>
               {activeStep === 0 ? (
                 <section className="editor-section" aria-labelledby="checkpoint-summary-title">
@@ -511,31 +540,22 @@ export function CheckpointEditor({ workItemId, onClose, onSaved }: CheckpointEdi
                       onChange={(statusAfter) => setDraft({ ...draft, statusAfter })}
                     />
                   </div>
-                  <label className="editor-field">
-                    <span>기록 시각</span>
+                  <label className="editor-field full">
+                    <span>작업일</span>
                     <input
                       required
-                      type="datetime-local"
-                      value={draft.capturedAt}
-                      onChange={(event) => setDraft({ ...draft, capturedAt: event.target.value })}
+                      type="date"
+                      value={draft.workStart}
+                      onChange={(event) => {
+                        const workStart = event.target.value;
+                        setDraft({
+                          ...draft,
+                          workStart,
+                          workEnd: draft.workEnd === draft.workStart ? workStart : draft.workEnd,
+                        });
+                      }}
                     />
-                  </label>
-                  <label className="editor-field">
-                    <span>Timezone</span>
-                    <input
-                      required
-                      value={draft.timezone}
-                      placeholder="Asia/Seoul"
-                      onChange={(event) => setDraft({ ...draft, timezone: event.target.value })}
-                    />
-                  </label>
-                  <label className="editor-field">
-                    <span>작업 시작일</span>
-                    <input required type="date" value={draft.workStart} onChange={(event) => setDraft({ ...draft, workStart: event.target.value })} />
-                  </label>
-                  <label className="editor-field">
-                    <span>작업 종료일</span>
-                    <input required type="date" value={draft.workEnd} onChange={(event) => setDraft({ ...draft, workEnd: event.target.value })} />
+                    <small>오늘 날짜가 자동으로 입력됩니다. 여러 날 작업은 아래에서 기간을 조정하세요.</small>
                   </label>
                   {draft.kind === "correction" ? (
                     <label className="editor-field full">
@@ -555,6 +575,44 @@ export function CheckpointEditor({ workItemId, onClose, onSaved }: CheckpointEdi
                     <span>진행한 작업</span>
                     <textarea required rows={4} value={draft.activities} placeholder="한 줄에 하나씩 입력" onChange={(event) => setDraft({ ...draft, activities: event.target.value })} />
                   </label>
+                  <details className="editor-disclosure checkpoint-time-disclosure full">
+                    <summary>
+                      <span>
+                        <strong>시간·기간 조정</strong>
+                        <small>기록 시각과 시간대는 자동으로 설정됩니다</small>
+                      </span>
+                    </summary>
+                    <div className="editor-disclosure-content editor-grid">
+                      <label className="editor-field">
+                        <span>기록 시각</span>
+                        <input
+                          required
+                          type="datetime-local"
+                          value={draft.capturedAt}
+                          onChange={(event) => setDraft({ ...draft, capturedAt: event.target.value })}
+                        />
+                      </label>
+                      <label className="editor-field">
+                        <span>시간대</span>
+                        <input
+                          required
+                          value={draft.timezone}
+                          placeholder="Asia/Seoul"
+                          onChange={(event) => setDraft({ ...draft, timezone: event.target.value })}
+                        />
+                      </label>
+                      <label className="editor-field full">
+                        <span>작업 종료일</span>
+                        <input
+                          required
+                          min={draft.workStart}
+                          type="date"
+                          value={draft.workEnd}
+                          onChange={(event) => setDraft({ ...draft, workEnd: event.target.value })}
+                        />
+                      </label>
+                    </div>
+                  </details>
                 </div>
                 </section>
               ) : null}
@@ -648,7 +706,9 @@ export function CheckpointEditor({ workItemId, onClose, onSaved }: CheckpointEdi
                     <span className="eyebrow">References</span>
                     <h3 id="checkpoint-proof-title">연결할 근거</h3>
                   </div>
-                  <span className="editor-preserved">각 항목을 한 줄에 하나씩 입력합니다</span>
+                  <span className="editor-preserved">
+                    Context의 Git 기준점과 파일을 자동 제안합니다
+                  </span>
                 </div>
                 <div className="editor-grid checkpoint-evidence-grid">
                   <label className="editor-field"><span>커밋</span><textarea rows={2} value={draft.evidenceCommits} onChange={(event) => setDraft({ ...draft, evidenceCommits: event.target.value })} /></label>
@@ -696,6 +756,11 @@ export function CheckpointEditor({ workItemId, onClose, onSaved }: CheckpointEdi
                   단계 {activeStep + 1}/{checkpointSteps.length} · {checkpointSteps[activeStep].description}
                 </div>
                 <Button type="button" size="sm" variant="ghost" onClick={requestClose}>취소</Button>
+                {activeStep === 0 ? (
+                  <Button type="button" size="sm" variant="secondary" onClick={() => void quickReview()}>
+                    빠른 기록 검토
+                  </Button>
+                ) : null}
                 {activeStep > 0 ? (
                   <Button type="button" size="sm" variant="ghost" onClick={() => setActiveStep((step) => step - 1)}>
                     이전

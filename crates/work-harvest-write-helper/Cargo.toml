@@ -1,6 +1,6 @@
 [package]
 name = "work-harvest-write-helper"
-version = "0.1.0"
+version = "0.3.1"
 description = "Internal transaction bridge for the legacy Work Harvest Node CLI"
 edition.workspace = true
 license.workspace = true

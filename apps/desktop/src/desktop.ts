@@ -1,5 +1,17 @@
 import { invoke } from "@tauri-apps/api/core";
 
+export interface BuildInfo {
+  version: string;
+  commit: string;
+  dirty: boolean;
+  built_at_unix: number;
+  profile: "debug" | "release";
+}
+
+export function getBuildInfo() {
+  return invoke<BuildInfo>("get_build_info");
+}
+
 export interface DataRootCounts {
   work_items: number;
   contexts: number;
@@ -19,8 +31,10 @@ export interface WorkItemSummary {
   title: string;
   status: string;
   updated_at: string;
+  activity_dates: string[];
   current_state: string | null;
   last_checkpoint_id: string | null;
+  last_checkpoint_confidentiality: "normal" | "sensitive" | "restricted" | null;
 }
 
 export interface DataRootSnapshot {
@@ -29,6 +43,7 @@ export interface DataRootSnapshot {
   issues: DataIssue[];
   work_items: WorkItemSummary[];
   checkpoint_ids: string[];
+  restricted_checkpoint_ids: string[];
 }
 
 export interface DataRootUpdate {
@@ -110,6 +125,7 @@ export interface CheckpointSummary {
   title: string;
   summary: string;
   status_after: string;
+  confidentiality: "normal" | "sensitive" | "restricted";
   markdown_path: string;
   activities: string[];
   decisions: CheckpointDecision[];
@@ -438,6 +454,7 @@ export interface CheckpointWriteResult {
 export interface PerformanceNoteInput {
   work_item_id: string;
   output?: string | null;
+  markdown?: string | null;
 }
 
 export interface PerformanceNoteSourceRevision {
@@ -452,6 +469,8 @@ export interface PerformanceNotePaths {
 export interface PerformanceNoteWritePreview {
   work_item: WorkItemDocument;
   checkpoint_count: number;
+  redacted_checkpoint_count: number;
+  excluded_checkpoint_count: number;
   paths: PerformanceNotePaths;
   source_revisions: PerformanceNoteSourceRevision[];
   files: WorkItemFileChange[];
@@ -460,8 +479,52 @@ export interface PerformanceNoteWritePreview {
 export interface PerformanceNoteWriteResult {
   work_item: WorkItemDocument;
   checkpoint_count: number;
+  redacted_checkpoint_count: number;
+  excluded_checkpoint_count: number;
   paths: PerformanceNotePaths;
   source_revisions: PerformanceNoteSourceRevision[];
+  commit: WorkItemWriteResult["commit"];
+}
+
+export interface WeeklyReportInput {
+  start_date: string;
+  end_date: string;
+  output?: string | null;
+  markdown?: string | null;
+}
+
+export interface WeeklyReportStats {
+  work_item_count: number;
+  checkpoint_count: number;
+  redacted_checkpoint_count: number;
+  excluded_checkpoint_count: number;
+  unknown_period_checkpoint_count: number;
+  git_commit_count: number;
+  verification_count: number;
+  passed_verification_count: number;
+  failed_verification_count: number;
+  partial_verification_count: number;
+  not_run_verification_count: number;
+}
+
+export interface WeeklyReportWritePreview {
+  start_date: string;
+  end_date: string;
+  stats: WeeklyReportStats;
+  paths: PerformanceNotePaths;
+  source_revisions: PerformanceNoteSourceRevision[];
+  report_revision: FileRevision | null;
+  replaces_existing: boolean;
+  files: WorkItemFileChange[];
+}
+
+export interface WeeklyReportWriteResult {
+  start_date: string;
+  end_date: string;
+  stats: WeeklyReportStats;
+  paths: PerformanceNotePaths;
+  source_revisions: PerformanceNoteSourceRevision[];
+  replaced_existing: boolean;
   commit: WorkItemWriteResult["commit"];
 }
 
@@ -605,6 +668,27 @@ export function createPerformanceNote(
   });
 }
 
+export function previewWeeklyReport(input: WeeklyReportInput, generatedAt: string) {
+  return invoke<WeeklyReportWritePreview>("preview_weekly_report", {
+    input,
+    generatedAt,
+  });
+}
+
+export function createWeeklyReport(
+  input: WeeklyReportInput,
+  expected: PerformanceNoteSourceRevision[],
+  expectedReportRevision: FileRevision | null,
+  generatedAt: string,
+) {
+  return invoke<WeeklyReportWriteResult>("create_weekly_report", {
+    input,
+    expected,
+    expectedReportRevision,
+    generatedAt,
+  });
+}
+
 export function revealWorkItem(workItemId: string) {
   return invoke<void>("reveal_work_item", { workItemId });
 }
@@ -623,4 +707,8 @@ export function openExternalUrl(url: string) {
 
 export function openPerformanceNoteMarkdown(report: string) {
   return invoke<void>("open_performance_note_markdown", { report });
+}
+
+export function openWeeklyReportMarkdown(report: string) {
+  return invoke<void>("open_weekly_report_markdown", { report });
 }

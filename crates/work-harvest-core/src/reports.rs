@@ -1,4 +1,6 @@
-use crate::checkpoints::{CheckpointDocument, CheckpointWriteError, validate_checkpoint};
+use crate::checkpoints::{
+    CheckpointDocument, CheckpointEvidenceDocument, CheckpointWriteError, validate_checkpoint,
+};
 use crate::work_items::{
     WorkContextDocument, WorkItemChangeOperation, WorkItemDocument, WorkItemFileChange,
     WorkItemPaths, WorkItemWriteError, paths as work_item_paths, validate_documents,
@@ -7,9 +9,10 @@ use crate::write::hash_bytes;
 use crate::{
     DataRootWriter, FileRevision, WriteCommit, WriteError, WriteOperation, read_file_revision,
 };
+use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsStr;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
@@ -48,6 +51,7 @@ pub enum PerformanceNoteWriteError {
 pub struct PerformanceNoteInput {
     pub work_item_id: String,
     pub output: Option<String>,
+    pub markdown: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -71,6 +75,8 @@ pub struct PerformanceNoteCheckpoint {
 pub struct PerformanceNoteWritePreview {
     pub work_item: WorkItemDocument,
     pub checkpoint_count: usize,
+    pub redacted_checkpoint_count: usize,
+    pub excluded_checkpoint_count: usize,
     pub paths: PerformanceNotePaths,
     pub source_revisions: Vec<PerformanceNoteSourceRevision>,
     pub files: Vec<WorkItemFileChange>,
@@ -80,8 +86,56 @@ pub struct PerformanceNoteWritePreview {
 pub struct PerformanceNoteWriteResult {
     pub work_item: WorkItemDocument,
     pub checkpoint_count: usize,
+    pub redacted_checkpoint_count: usize,
+    pub excluded_checkpoint_count: usize,
     pub paths: PerformanceNotePaths,
     pub source_revisions: Vec<PerformanceNoteSourceRevision>,
+    pub commit: WriteCommit,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WeeklyReportInput {
+    pub start_date: String,
+    pub end_date: String,
+    pub output: Option<String>,
+    pub markdown: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WeeklyReportStats {
+    pub work_item_count: usize,
+    pub checkpoint_count: usize,
+    pub redacted_checkpoint_count: usize,
+    pub excluded_checkpoint_count: usize,
+    pub unknown_period_checkpoint_count: usize,
+    pub git_commit_count: usize,
+    pub verification_count: usize,
+    pub passed_verification_count: usize,
+    pub failed_verification_count: usize,
+    pub partial_verification_count: usize,
+    pub not_run_verification_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct WeeklyReportWritePreview {
+    pub start_date: String,
+    pub end_date: String,
+    pub stats: WeeklyReportStats,
+    pub paths: PerformanceNotePaths,
+    pub source_revisions: Vec<PerformanceNoteSourceRevision>,
+    pub report_revision: Option<FileRevision>,
+    pub replaces_existing: bool,
+    pub files: Vec<WorkItemFileChange>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct WeeklyReportWriteResult {
+    pub start_date: String,
+    pub end_date: String,
+    pub stats: WeeklyReportStats,
+    pub paths: PerformanceNotePaths,
+    pub source_revisions: Vec<PerformanceNoteSourceRevision>,
+    pub replaced_existing: bool,
     pub commit: WriteCommit,
 }
 
@@ -97,8 +151,22 @@ struct StoredCheckpoint {
 struct PreparedPerformanceNote {
     work_item: WorkItemDocument,
     checkpoint_count: usize,
+    redacted_checkpoint_count: usize,
+    excluded_checkpoint_count: usize,
     paths: PerformanceNotePaths,
     source_revisions: Vec<PerformanceNoteSourceRevision>,
+    markdown: String,
+}
+
+#[derive(Debug)]
+struct PreparedWeeklyReport {
+    start_date: String,
+    end_date: String,
+    stats: WeeklyReportStats,
+    paths: PerformanceNotePaths,
+    source_revisions: Vec<PerformanceNoteSourceRevision>,
+    report_revision: Option<FileRevision>,
+    existing_markdown: Option<String>,
     markdown: String,
 }
 
@@ -223,6 +291,44 @@ fn load_checkpoints(root: &Path) -> Result<Vec<StoredCheckpoint>, PerformanceNot
         });
     }
     Ok(checkpoints)
+}
+
+fn checkpoint_for_report(entry: &StoredCheckpoint) -> Option<PerformanceNoteCheckpoint> {
+    if entry.checkpoint.confidentiality == "restricted" {
+        return None;
+    }
+
+    let mut checkpoint = entry.checkpoint.clone();
+    if checkpoint.confidentiality == "sensitive" {
+        checkpoint.activities =
+            vec!["민감 기록의 세부 활동은 보고서에서 생략했습니다.".to_string()];
+        checkpoint.decisions.clear();
+        checkpoint.blockers.clear();
+        checkpoint.next_steps.clear();
+        checkpoint.evidence = CheckpointEvidenceDocument {
+            commits: Vec::new(),
+            pull_requests: Vec::new(),
+            issues: Vec::new(),
+            files: Vec::new(),
+            commands: Vec::new(),
+            urls: Vec::new(),
+        };
+        checkpoint.git = None;
+        checkpoint.source.session_ref = None;
+        checkpoint.source.task_title = None;
+        for verification in &mut checkpoint.verifications {
+            verification.command = None;
+            verification.evidence_refs.clear();
+        }
+        for outcome in &mut checkpoint.outcomes {
+            outcome.evidence_refs.clear();
+        }
+    }
+
+    Some(PerformanceNoteCheckpoint {
+        checkpoint,
+        markdown_path: entry.markdown_path.clone(),
+    })
 }
 
 fn js_value_string(value: &Value) -> String {
@@ -428,6 +534,14 @@ pub fn render_performance_note(
         .iter()
         .map(|entry| entry.checkpoint.id.clone())
         .collect::<Vec<_>>();
+    let report_confidentiality = if checkpoints
+        .iter()
+        .any(|entry| entry.checkpoint.confidentiality == "sensitive")
+    {
+        "sensitive"
+    } else {
+        "normal"
+    };
     let related_notes = checkpoints
         .iter()
         .map(|entry| entry.markdown_path.clone())
@@ -452,6 +566,7 @@ work_item_id: {}
 project_id: {}
 generated_from_checkpoints: {}
 generated_at: {}
+confidentiality: {report_confidentiality}
 ---
 
 # {} 성과 노트
@@ -628,6 +743,344 @@ generated_at: {}
     )
 }
 
+fn parse_report_date(value: &str, field: &str) -> Result<NaiveDate, PerformanceNoteWriteError> {
+    NaiveDate::parse_from_str(value, "%Y-%m-%d").map_err(|error| {
+        PerformanceNoteWriteError::InvalidInput(format!(
+            "{field} must be a calendar date in YYYY-MM-DD format: {error}"
+        ))
+    })
+}
+
+fn temporal_boundary_date(value: &Value) -> Option<NaiveDate> {
+    value
+        .as_str()
+        .and_then(|value| value.get(0..10))
+        .and_then(|value| NaiveDate::parse_from_str(value, "%Y-%m-%d").ok())
+}
+
+fn captured_date(checkpoint: &CheckpointDocument) -> Option<NaiveDate> {
+    checkpoint
+        .captured_at
+        .get(0..10)
+        .and_then(|value| NaiveDate::parse_from_str(value, "%Y-%m-%d").ok())
+}
+
+fn checkpoint_overlaps_period(
+    checkpoint: &CheckpointDocument,
+    start_date: NaiveDate,
+    end_date: NaiveDate,
+) -> bool {
+    match (
+        temporal_boundary_date(&checkpoint.work_period.start),
+        temporal_boundary_date(&checkpoint.work_period.end),
+    ) {
+        (Some(start), Some(end)) => start <= end_date && end >= start_date,
+        (Some(date), None) | (None, Some(date)) => date >= start_date && date <= end_date,
+        (None, None) => false,
+    }
+}
+
+fn weekly_checkpoints(
+    root: &Path,
+    start_date: NaiveDate,
+    end_date: NaiveDate,
+) -> Result<Vec<StoredCheckpoint>, PerformanceNoteWriteError> {
+    let mut checkpoints = load_checkpoints(root)?
+        .into_iter()
+        .filter(|entry| checkpoint_overlaps_period(&entry.checkpoint, start_date, end_date))
+        .collect::<Vec<_>>();
+    checkpoints.sort_by(|left, right| {
+        left.checkpoint
+            .captured_at
+            .cmp(&right.checkpoint.captured_at)
+            .then_with(|| left.checkpoint.id.cmp(&right.checkpoint.id))
+    });
+    Ok(checkpoints)
+}
+
+fn weekly_work_item_sources(
+    root: &Path,
+    checkpoints: &[StoredCheckpoint],
+) -> Result<Vec<PerformanceNoteSources>, PerformanceNoteWriteError> {
+    let work_item_ids = checkpoints
+        .iter()
+        .map(|entry| entry.checkpoint.work_item_id.clone())
+        .collect::<BTreeSet<_>>();
+    work_item_ids
+        .iter()
+        .map(|work_item_id| read_performance_note_sources(root, work_item_id))
+        .collect()
+}
+
+fn weekly_report_stats(
+    checkpoints: &[PerformanceNoteCheckpoint],
+    redacted_checkpoint_count: usize,
+    excluded_checkpoint_count: usize,
+    unknown_period_checkpoint_count: usize,
+) -> WeeklyReportStats {
+    let work_item_count = checkpoints
+        .iter()
+        .map(|entry| entry.checkpoint.work_item_id.as_str())
+        .collect::<BTreeSet<_>>()
+        .len();
+    let git_commits = checkpoints
+        .iter()
+        .flat_map(|entry| {
+            let mut commits = entry.checkpoint.evidence.commits.clone();
+            if let Some(head_after) = entry
+                .checkpoint
+                .git
+                .as_ref()
+                .and_then(|git| git.head_after.clone())
+            {
+                commits.push(head_after);
+            }
+            commits
+        })
+        .filter(|commit| !commit.trim().is_empty())
+        .collect::<BTreeSet<_>>();
+    let verifications = checkpoints
+        .iter()
+        .flat_map(|entry| entry.checkpoint.verifications.iter())
+        .collect::<Vec<_>>();
+
+    WeeklyReportStats {
+        work_item_count,
+        checkpoint_count: checkpoints.len(),
+        redacted_checkpoint_count,
+        excluded_checkpoint_count,
+        unknown_period_checkpoint_count,
+        git_commit_count: git_commits.len(),
+        verification_count: verifications.len(),
+        passed_verification_count: verifications
+            .iter()
+            .filter(|verification| verification.status == "passed")
+            .count(),
+        failed_verification_count: verifications
+            .iter()
+            .filter(|verification| verification.status == "failed")
+            .count(),
+        partial_verification_count: verifications
+            .iter()
+            .filter(|verification| verification.status == "partial")
+            .count(),
+        not_run_verification_count: verifications
+            .iter()
+            .filter(|verification| verification.status == "not_run")
+            .count(),
+    }
+}
+
+fn markdown_cell(value: &str) -> String {
+    value.replace('|', "\\|").replace('\n', " ")
+}
+
+fn weekly_work_item_sections(
+    sources: &[PerformanceNoteSources],
+    checkpoints: &[PerformanceNoteCheckpoint],
+) -> String {
+    let sources = sources
+        .iter()
+        .map(|source| (source.work_item.id.as_str(), source))
+        .collect::<BTreeMap<_, _>>();
+    let mut grouped = BTreeMap::<&str, Vec<&PerformanceNoteCheckpoint>>::new();
+    for checkpoint in checkpoints {
+        grouped
+            .entry(checkpoint.checkpoint.work_item_id.as_str())
+            .or_default()
+            .push(checkpoint);
+    }
+    if grouped.is_empty() {
+        return "- 이 기간에 보고할 수 있는 체크포인트가 없습니다.".to_string();
+    }
+
+    grouped
+        .into_iter()
+        .filter_map(|(work_item_id, entries)| {
+            let source = sources.get(work_item_id)?;
+            let outcomes = entries
+                .iter()
+                .flat_map(|entry| entry.checkpoint.outcomes.iter())
+                .map(|outcome| outcome.description.clone())
+                .collect::<Vec<_>>();
+            let summaries = entries
+                .iter()
+                .map(|entry| entry.checkpoint.summary.clone())
+                .collect::<Vec<_>>();
+            let latest_status = entries
+                .last()
+                .map(|entry| entry.checkpoint.status_after.as_str())
+                .unwrap_or(source.work_item.status.as_str());
+            Some(format!(
+                "### {} · {}\n\n- 업무 ID: `{}`\n- 기간 종료 상태: {}\n- 핵심 결과:\n{}\n- 작업 요약:\n{}",
+                source.work_item.project_id,
+                source.work_item.title,
+                source.work_item.id,
+                latest_status,
+                bullets(&outcomes, "구조화된 결과 미기록"),
+                bullets(&summaries, "요약 미기록")
+            ))
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
+
+fn weekly_git_summary(checkpoints: &[PerformanceNoteCheckpoint]) -> String {
+    let mut entries = BTreeSet::new();
+    for entry in checkpoints {
+        let checkpoint = &entry.checkpoint;
+        if let Some(git) = &checkpoint.git {
+            entries.insert(format!(
+                "{} · {} · {} → {} · 작업 트리 {}",
+                git.repository,
+                git.branch.as_deref().unwrap_or("브랜치 미확인"),
+                git.head_before.as_deref().unwrap_or("시작 커밋 미확인"),
+                git.head_after.as_deref().unwrap_or("종료 커밋 미확인"),
+                match git.dirty {
+                    Some(true) => "수정 포함",
+                    Some(false) => "깨끗함",
+                    None => "미확인",
+                }
+            ));
+        }
+        entries.extend(
+            checkpoint
+                .evidence
+                .commits
+                .iter()
+                .map(|commit| format!("커밋 `{commit}` · {}", checkpoint.title)),
+        );
+        entries.extend(
+            checkpoint
+                .evidence
+                .pull_requests
+                .iter()
+                .map(|pull_request| format!("PR {pull_request} · {}", checkpoint.title)),
+        );
+    }
+    bullets(
+        &entries.into_iter().collect::<Vec<_>>(),
+        "기록된 Git 변경 없음",
+    )
+}
+
+fn weekly_verification_table(checkpoints: &[PerformanceNoteCheckpoint]) -> String {
+    let rows = checkpoints
+        .iter()
+        .flat_map(|entry| {
+            entry
+                .checkpoint
+                .verifications
+                .iter()
+                .map(move |verification| {
+                    format!(
+                        "| {} | {} | {} | {} | {} |",
+                        markdown_cell(&entry.checkpoint.work_item_id),
+                        markdown_cell(&verification.kind),
+                        markdown_cell(&verification.status),
+                        markdown_cell(&verification.description),
+                        verification
+                            .command
+                            .as_deref()
+                            .map(markdown_cell)
+                            .unwrap_or_else(|| "—".to_string())
+                    )
+                })
+        })
+        .collect::<Vec<_>>();
+    if rows.is_empty() {
+        return "- 기록된 검증 결과가 없습니다.".to_string();
+    }
+    format!(
+        "| 업무 | 유형 | 상태 | 설명 | 명령 |\n| --- | --- | --- | --- | --- |\n{}",
+        rows.join("\n")
+    )
+}
+
+fn weekly_followups(
+    sources: &[PerformanceNoteSources],
+    checkpoints: &[PerformanceNoteCheckpoint],
+) -> (Vec<String>, Vec<String>) {
+    let included_work_items = checkpoints
+        .iter()
+        .map(|entry| entry.checkpoint.work_item_id.as_str())
+        .collect::<BTreeSet<_>>();
+    let risks = sources
+        .iter()
+        .filter(|source| included_work_items.contains(source.work_item.id.as_str()))
+        .flat_map(|source| source.context.risks.iter().cloned())
+        .chain(
+            checkpoints
+                .iter()
+                .flat_map(|entry| entry.checkpoint.blockers.iter().cloned()),
+        )
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let next_steps = sources
+        .iter()
+        .filter(|source| included_work_items.contains(source.work_item.id.as_str()))
+        .flat_map(|source| source.context.next_steps.iter().cloned())
+        .chain(
+            checkpoints
+                .iter()
+                .flat_map(|entry| entry.checkpoint.next_steps.iter().cloned()),
+        )
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    (risks, next_steps)
+}
+
+fn render_weekly_report(
+    sources: &[PerformanceNoteSources],
+    checkpoints: &[PerformanceNoteCheckpoint],
+    stats: &WeeklyReportStats,
+    start_date: &str,
+    end_date: &str,
+    generated_at: &str,
+) -> String {
+    let checkpoint_ids = checkpoints
+        .iter()
+        .map(|entry| entry.checkpoint.id.clone())
+        .collect::<Vec<_>>();
+    let confidentiality = if stats.redacted_checkpoint_count > 0 {
+        "sensitive"
+    } else {
+        "normal"
+    };
+    let (risks, next_steps) = weekly_followups(sources, checkpoints);
+    let source_notes = checkpoints
+        .iter()
+        .map(|entry| format!("{}: {}", entry.checkpoint.id, entry.markdown_path))
+        .collect::<Vec<_>>();
+
+    format!(
+        "---\nreport_type: weekly\nstart_date: {}\nend_date: {}\ngenerated_from_checkpoints: {}\ngenerated_at: {}\nconfidentiality: {confidentiality}\n---\n\n# 주간 성과보고서 · {start_date} ~ {end_date}\n\n> 구조화된 체크포인트에서 자동 집계한 초안입니다. 기간, Git 변경, 검증 결과와 다음 작업을 확인한 뒤 공유하세요.\n\n## 한눈에 보기\n\n- 업무: {}개\n- 포함 체크포인트: {}개\n- 민감 체크포인트: {}개 세부 정보 생략\n- 제한 체크포인트: {}개 제외\n- 기간 미확인 체크포인트: {}개 제외\n- Git 커밋: {}개\n- 검증: {}개 · 통과 {} · 실패 {} · 부분 통과 {} · 미실행 {}\n\n## 업무별 성과\n\n{}\n\n## Git 변경\n\n{}\n\n## 테스트·검증 결과\n\n{}\n\n## 위험 및 차단 사항\n\n{}\n\n## 다음 주 우선순위\n\n{}\n\n## 근거 기록\n\n{}\n",
+        serde_json::to_string(start_date).expect("serializing a date cannot fail"),
+        serde_json::to_string(end_date).expect("serializing a date cannot fail"),
+        serde_json::to_string(&checkpoint_ids).expect("serializing checkpoint IDs cannot fail"),
+        serde_json::to_string(generated_at).expect("serializing a timestamp cannot fail"),
+        stats.work_item_count,
+        stats.checkpoint_count,
+        stats.redacted_checkpoint_count,
+        stats.excluded_checkpoint_count,
+        stats.unknown_period_checkpoint_count,
+        stats.git_commit_count,
+        stats.verification_count,
+        stats.passed_verification_count,
+        stats.failed_verification_count,
+        stats.partial_verification_count,
+        stats.not_run_verification_count,
+        weekly_work_item_sections(sources, checkpoints),
+        weekly_git_summary(checkpoints),
+        weekly_verification_table(checkpoints),
+        bullets(&risks, "등록된 위험 또는 차단 사항 없음"),
+        bullets(&next_steps, "등록된 다음 작업 없음"),
+        bullets(&source_notes, "포함된 체크포인트 없음"),
+    )
+}
+
 fn sorted_checkpoints(
     root: &Path,
     work_item_id: &str,
@@ -661,6 +1114,29 @@ fn normalize_output_path(value: &str) -> Result<PathBuf, PerformanceNoteWriteErr
     Ok(path)
 }
 
+fn validate_report_confidentiality(
+    markdown: &str,
+    expected: &str,
+) -> Result<(), PerformanceNoteWriteError> {
+    let frontmatter = markdown
+        .strip_prefix("---\n")
+        .and_then(|value| value.split_once("\n---"))
+        .map(|(frontmatter, _)| frontmatter);
+    let actual = frontmatter.and_then(|frontmatter| {
+        frontmatter.lines().find_map(|line| {
+            line.strip_prefix("confidentiality:")
+                .map(str::trim)
+                .map(|value| value.trim_matches(['\"', '\'']))
+        })
+    });
+    if actual != Some(expected) {
+        return Err(PerformanceNoteWriteError::InvalidInput(format!(
+            "report Markdown must preserve confidentiality: {expected}"
+        )));
+    }
+    Ok(())
+}
+
 fn prepare_performance_note(
     writer: &DataRootWriter,
     input: PerformanceNoteInput,
@@ -668,7 +1144,19 @@ fn prepare_performance_note(
 ) -> Result<PreparedPerformanceNote, PerformanceNoteWriteError> {
     let snapshot = read_performance_note_sources(writer.root(), &input.work_item_id)?;
     let checkpoints = sorted_checkpoints(writer.root(), &input.work_item_id)?;
-    let date = checkpoints
+    let report_checkpoints = checkpoints
+        .iter()
+        .filter_map(checkpoint_for_report)
+        .collect::<Vec<_>>();
+    let redacted_checkpoint_count = checkpoints
+        .iter()
+        .filter(|entry| entry.checkpoint.confidentiality == "sensitive")
+        .count();
+    let excluded_checkpoint_count = checkpoints
+        .iter()
+        .filter(|entry| entry.checkpoint.confidentiality == "restricted")
+        .count();
+    let date = report_checkpoints
         .last()
         .and_then(|entry| entry.checkpoint.work_period.end.as_str())
         .or_else(|| generated_at.get(0..10))
@@ -706,22 +1194,27 @@ fn prepare_performance_note(
         });
     }
     source_revisions.sort_by(|left, right| left.path.cmp(&right.path));
-    let report_checkpoints = checkpoints
-        .into_iter()
-        .map(|entry| PerformanceNoteCheckpoint {
-            checkpoint: entry.checkpoint,
-            markdown_path: entry.markdown_path,
-        })
-        .collect::<Vec<_>>();
-    let markdown = render_performance_note(
-        &snapshot.work_item,
-        &snapshot.context,
-        &report_checkpoints,
-        generated_at,
-    );
+    let markdown = input.markdown.unwrap_or_else(|| {
+        render_performance_note(
+            &snapshot.work_item,
+            &snapshot.context,
+            &report_checkpoints,
+            generated_at,
+        )
+    });
+    validate_report_confidentiality(
+        &markdown,
+        if redacted_checkpoint_count > 0 {
+            "sensitive"
+        } else {
+            "normal"
+        },
+    )?;
     Ok(PreparedPerformanceNote {
         work_item: snapshot.work_item,
         checkpoint_count: report_checkpoints.len(),
+        redacted_checkpoint_count,
+        excluded_checkpoint_count,
         paths: PerformanceNotePaths { report: output },
         source_revisions,
         markdown,
@@ -813,6 +1306,8 @@ pub fn preview_performance_note(
     Ok(PerformanceNoteWritePreview {
         work_item: prepared.work_item,
         checkpoint_count: prepared.checkpoint_count,
+        redacted_checkpoint_count: prepared.redacted_checkpoint_count,
+        excluded_checkpoint_count: prepared.excluded_checkpoint_count,
         paths: prepared.paths.clone(),
         source_revisions: prepared.source_revisions,
         files: vec![WorkItemFileChange {
@@ -855,6 +1350,8 @@ fn commit_performance_note(
     Ok(PerformanceNoteWriteResult {
         work_item: prepared.work_item,
         checkpoint_count: prepared.checkpoint_count,
+        redacted_checkpoint_count: prepared.redacted_checkpoint_count,
+        excluded_checkpoint_count: prepared.excluded_checkpoint_count,
         paths: prepared.paths,
         source_revisions: prepared.source_revisions,
         commit,
@@ -881,6 +1378,282 @@ pub fn create_performance_note_from_current(
     let prepared = prepare_performance_note(&writer, input, generated_at)?;
     let expected = prepared.source_revisions.clone();
     commit_performance_note(writer, prepared, expected)
+}
+
+fn prepare_weekly_report(
+    writer: &DataRootWriter,
+    input: WeeklyReportInput,
+    generated_at: &str,
+) -> Result<PreparedWeeklyReport, PerformanceNoteWriteError> {
+    let WeeklyReportInput {
+        start_date,
+        end_date,
+        output,
+        markdown,
+    } = input;
+    let start = parse_report_date(&start_date, "start_date")?;
+    let end = parse_report_date(&end_date, "end_date")?;
+    if start > end {
+        return Err(PerformanceNoteWriteError::InvalidInput(
+            "weekly report start_date must be on or before end_date".to_string(),
+        ));
+    }
+
+    let all_checkpoints = load_checkpoints(writer.root())?;
+    let unknown_period_checkpoint_count = all_checkpoints
+        .iter()
+        .filter(|entry| {
+            temporal_boundary_date(&entry.checkpoint.work_period.start).is_none()
+                && temporal_boundary_date(&entry.checkpoint.work_period.end).is_none()
+                && captured_date(&entry.checkpoint).is_some_and(|date| date >= start && date <= end)
+        })
+        .count();
+    let mut checkpoints = all_checkpoints
+        .into_iter()
+        .filter(|entry| checkpoint_overlaps_period(&entry.checkpoint, start, end))
+        .collect::<Vec<_>>();
+    checkpoints.sort_by(|left, right| {
+        left.checkpoint
+            .captured_at
+            .cmp(&right.checkpoint.captured_at)
+            .then_with(|| left.checkpoint.id.cmp(&right.checkpoint.id))
+    });
+    let sources = weekly_work_item_sources(writer.root(), &checkpoints)?;
+    let report_checkpoints = checkpoints
+        .iter()
+        .filter_map(checkpoint_for_report)
+        .collect::<Vec<_>>();
+    let redacted_checkpoint_count = checkpoints
+        .iter()
+        .filter(|entry| entry.checkpoint.confidentiality == "sensitive")
+        .count();
+    let excluded_checkpoint_count = checkpoints
+        .iter()
+        .filter(|entry| entry.checkpoint.confidentiality == "restricted")
+        .count();
+    let stats = weekly_report_stats(
+        &report_checkpoints,
+        redacted_checkpoint_count,
+        excluded_checkpoint_count,
+        unknown_period_checkpoint_count,
+    );
+    let output = output.unwrap_or_else(|| {
+        format!(
+            "reports/weekly/{}_to_{}.md",
+            start_date.replace('-', ""),
+            end_date.replace('-', "")
+        )
+    });
+    let output_path = normalize_output_path(&output)?;
+    let output = output_path
+        .to_str()
+        .expect("normalize_output_path accepts UTF-8 input")
+        .replace(std::path::MAIN_SEPARATOR, "/");
+    let report_revision = writer.revision(&output)?;
+    let existing_markdown = if report_revision.is_some() {
+        Some(
+            fs::read_to_string(writer.root().join(&output)).map_err(|source| {
+                PerformanceNoteWriteError::Read {
+                    path: output.clone(),
+                    source,
+                }
+            })?,
+        )
+    } else {
+        None
+    };
+
+    let mut source_revisions = Vec::new();
+    for source in &sources {
+        source_revisions.push(PerformanceNoteSourceRevision {
+            path: source.paths.work_item.clone(),
+            revision: source.work_item_revision.clone(),
+        });
+        source_revisions.push(PerformanceNoteSourceRevision {
+            path: source.paths.context_data.clone(),
+            revision: source.context_revision.clone(),
+        });
+    }
+    source_revisions.extend(
+        checkpoints
+            .iter()
+            .map(|checkpoint| PerformanceNoteSourceRevision {
+                path: checkpoint.json_path.clone(),
+                revision: checkpoint.revision.clone(),
+            }),
+    );
+    source_revisions.sort_by(|left, right| left.path.cmp(&right.path));
+
+    let markdown = markdown.unwrap_or_else(|| {
+        render_weekly_report(
+            &sources,
+            &report_checkpoints,
+            &stats,
+            &start_date,
+            &end_date,
+            generated_at,
+        )
+    });
+    validate_report_confidentiality(
+        &markdown,
+        if redacted_checkpoint_count > 0 {
+            "sensitive"
+        } else {
+            "normal"
+        },
+    )?;
+
+    Ok(PreparedWeeklyReport {
+        start_date,
+        end_date,
+        stats,
+        paths: PerformanceNotePaths { report: output },
+        source_revisions,
+        report_revision,
+        existing_markdown,
+        markdown,
+    })
+}
+
+fn current_weekly_source_revisions(
+    root: &Path,
+    start_date: &str,
+    end_date: &str,
+) -> Result<Vec<PerformanceNoteSourceRevision>, PerformanceNoteWriteError> {
+    let start = parse_report_date(start_date, "start_date")?;
+    let end = parse_report_date(end_date, "end_date")?;
+    let checkpoints = weekly_checkpoints(root, start, end)?;
+    let sources = weekly_work_item_sources(root, &checkpoints)?;
+    let mut revisions = Vec::new();
+    for source in sources {
+        revisions.push(PerformanceNoteSourceRevision {
+            path: source.paths.work_item,
+            revision: source.work_item_revision,
+        });
+        revisions.push(PerformanceNoteSourceRevision {
+            path: source.paths.context_data,
+            revision: source.context_revision,
+        });
+    }
+    revisions.extend(
+        checkpoints
+            .into_iter()
+            .map(|checkpoint| PerformanceNoteSourceRevision {
+                path: checkpoint.json_path,
+                revision: checkpoint.revision,
+            }),
+    );
+    revisions.sort_by(|left, right| left.path.cmp(&right.path));
+    Ok(revisions)
+}
+
+pub fn preview_weekly_report(
+    root: impl AsRef<Path>,
+    input: WeeklyReportInput,
+    generated_at: &str,
+) -> Result<WeeklyReportWritePreview, PerformanceNoteWriteError> {
+    let writer = DataRootWriter::acquire(root)?;
+    let prepared = prepare_weekly_report(&writer, input, generated_at)?;
+    let replaces_existing = prepared.report_revision.is_some();
+    Ok(WeeklyReportWritePreview {
+        start_date: prepared.start_date,
+        end_date: prepared.end_date,
+        stats: prepared.stats,
+        paths: prepared.paths.clone(),
+        source_revisions: prepared.source_revisions,
+        report_revision: prepared.report_revision,
+        replaces_existing,
+        files: vec![WorkItemFileChange {
+            path: prepared.paths.report,
+            operation: if replaces_existing {
+                WorkItemChangeOperation::Replace
+            } else {
+                WorkItemChangeOperation::Create
+            },
+            before: prepared.existing_markdown,
+            after: prepared.markdown,
+        }],
+    })
+}
+
+fn commit_weekly_report(
+    mut writer: DataRootWriter,
+    prepared: PreparedWeeklyReport,
+    expected: Vec<PerformanceNoteSourceRevision>,
+    expected_report_revision: Option<FileRevision>,
+) -> Result<WeeklyReportWriteResult, PerformanceNoteWriteError> {
+    verify_source_revisions(&expected, &prepared.source_revisions)?;
+    let report_path = prepared.paths.report.clone();
+    if expected_report_revision != prepared.report_revision {
+        return Err(WriteError::RevisionConflict {
+            path: report_path,
+            expected: expected_report_revision
+                .as_ref()
+                .map(|revision| revision.sha256.clone())
+                .unwrap_or_else(|| "absent".to_string()),
+            actual: prepared
+                .report_revision
+                .as_ref()
+                .map(|revision| revision.sha256.clone()),
+        }
+        .into());
+    }
+    let replaced_existing = prepared.report_revision.is_some();
+    let expected_markdown = prepared.markdown.clone();
+    let start_date = prepared.start_date.clone();
+    let end_date = prepared.end_date.clone();
+    let validation_sources = prepared.source_revisions.clone();
+    let validation_start = start_date.clone();
+    let validation_end = end_date.clone();
+    let operation = match &prepared.report_revision {
+        Some(revision) => WriteOperation::replace(
+            PathBuf::from(&report_path),
+            revision.sha256.clone(),
+            prepared.markdown.into_bytes(),
+        ),
+        None => WriteOperation::create(PathBuf::from(&report_path), prepared.markdown.into_bytes()),
+    };
+    let commit = writer.commit_validated(vec![operation], move |root| {
+        let actual_sources =
+            current_weekly_source_revisions(root, &validation_start, &validation_end)
+                .map_err(|error| error.to_string())?;
+        verify_source_revisions(&validation_sources, &actual_sources)
+            .map_err(|error| error.to_string())?;
+        let actual =
+            fs::read_to_string(root.join(&report_path)).map_err(|error| error.to_string())?;
+        if actual != expected_markdown {
+            return Err("weekly report does not match the reviewed Markdown".to_string());
+        }
+        Ok(())
+    })?;
+    Ok(WeeklyReportWriteResult {
+        start_date,
+        end_date,
+        stats: prepared.stats,
+        paths: prepared.paths,
+        source_revisions: prepared.source_revisions,
+        replaced_existing,
+        commit,
+    })
+}
+
+pub fn create_weekly_report(
+    root: impl AsRef<Path>,
+    input: WeeklyReportInput,
+    expected: Vec<PerformanceNoteSourceRevision>,
+    expected_report_revision: Option<FileRevision>,
+    generated_at: &str,
+) -> Result<WeeklyReportWriteResult, PerformanceNoteWriteError> {
+    let writer = DataRootWriter::acquire(root)?;
+    let prepared = prepare_weekly_report(&writer, input, generated_at)?;
+    commit_weekly_report(writer, prepared, expected, expected_report_revision)
+}
+
+pub fn weekly_report_markdown_path(
+    root: impl AsRef<Path>,
+    report: &str,
+) -> Result<PathBuf, PerformanceNoteWriteError> {
+    performance_note_markdown_path(root, report)
 }
 
 pub fn performance_note_markdown_path(
@@ -951,6 +1724,16 @@ mod tests {
         PerformanceNoteInput {
             work_item_id: "AUTH-142".to_string(),
             output: None,
+            markdown: None,
+        }
+    }
+
+    fn weekly_input() -> WeeklyReportInput {
+        WeeklyReportInput {
+            start_date: "2026-07-13".to_string(),
+            end_date: "2026-07-19".to_string(),
+            output: None,
+            markdown: None,
         }
     }
 
@@ -989,6 +1772,8 @@ mod tests {
         seed_examples(directory.path());
         let preview = preview_performance_note(directory.path(), input(), GENERATED_AT).unwrap();
         assert_eq!(preview.checkpoint_count, 1);
+        assert_eq!(preview.redacted_checkpoint_count, 0);
+        assert_eq!(preview.excluded_checkpoint_count, 0);
         assert_eq!(preview.files.len(), 1);
         assert_eq!(preview.source_revisions.len(), 3);
         assert_eq!(
@@ -1008,6 +1793,298 @@ mod tests {
         assert_eq!(
             fs::read_to_string(directory.path().join(&result.paths.report)).unwrap(),
             preview.files[0].after
+        );
+    }
+
+    #[test]
+    fn weekly_report_collects_period_git_and_verification_evidence() {
+        let directory = tempdir().unwrap();
+        seed_examples(directory.path());
+
+        let preview =
+            preview_weekly_report(directory.path(), weekly_input(), GENERATED_AT).unwrap();
+        let markdown = &preview.files[0].after;
+
+        assert_eq!(preview.start_date, "2026-07-13");
+        assert_eq!(preview.end_date, "2026-07-19");
+        assert_eq!(preview.stats.work_item_count, 1);
+        assert_eq!(preview.stats.checkpoint_count, 1);
+        assert_eq!(preview.stats.git_commit_count, 1);
+        assert_eq!(preview.stats.verification_count, 1);
+        assert_eq!(preview.stats.passed_verification_count, 1);
+        assert_eq!(preview.source_revisions.len(), 3);
+        assert_eq!(
+            preview.paths.report,
+            "reports/weekly/20260713_to_20260719.md"
+        );
+        assert!(markdown.contains("# 주간 성과보고서 · 2026-07-13 ~ 2026-07-19"));
+        assert!(markdown.contains("jajak-front · 인증 시스템 개선"));
+        assert!(markdown.contains("커밋 `abc1234`"));
+        assert!(markdown.contains("인증 갱신 기본 성공 경로 테스트"));
+        assert!(!directory.path().join(&preview.paths.report).exists());
+
+        let result = create_weekly_report(
+            directory.path(),
+            weekly_input(),
+            preview.source_revisions,
+            preview.report_revision,
+            GENERATED_AT,
+        )
+        .unwrap();
+        assert_eq!(result.stats.checkpoint_count, 1);
+        assert_eq!(
+            fs::read_to_string(directory.path().join(&result.paths.report)).unwrap(),
+            markdown.as_str()
+        );
+    }
+
+    #[test]
+    fn weekly_report_previews_and_commits_a_revision_guarded_replacement() {
+        let directory = tempdir().unwrap();
+        seed_examples(directory.path());
+        let first_preview =
+            preview_weekly_report(directory.path(), weekly_input(), GENERATED_AT).unwrap();
+        let first = create_weekly_report(
+            directory.path(),
+            weekly_input(),
+            first_preview.source_revisions,
+            first_preview.report_revision,
+            GENERATED_AT,
+        )
+        .unwrap();
+
+        let replacement_preview =
+            preview_weekly_report(directory.path(), weekly_input(), GENERATED_AT).unwrap();
+        assert!(replacement_preview.replaces_existing);
+        assert!(replacement_preview.report_revision.is_some());
+        assert_eq!(
+            replacement_preview.files[0].operation,
+            WorkItemChangeOperation::Replace
+        );
+        let existing = fs::read_to_string(directory.path().join(&first.paths.report)).unwrap();
+        assert_eq!(
+            replacement_preview.files[0].before.as_deref(),
+            Some(existing.as_str())
+        );
+
+        let reviewed = format!(
+            "{}\n- 사용자 보완 내용\n",
+            replacement_preview.files[0].after
+        );
+        let result = create_weekly_report(
+            directory.path(),
+            WeeklyReportInput {
+                start_date: replacement_preview.start_date.clone(),
+                end_date: replacement_preview.end_date.clone(),
+                output: Some(replacement_preview.paths.report.clone()),
+                markdown: Some(reviewed.clone()),
+            },
+            replacement_preview.source_revisions,
+            replacement_preview.report_revision,
+            GENERATED_AT,
+        )
+        .unwrap();
+        assert!(result.replaced_existing);
+        assert_eq!(
+            fs::read_to_string(directory.path().join(result.paths.report)).unwrap(),
+            reviewed
+        );
+    }
+
+    #[test]
+    fn weekly_report_never_overwrites_a_report_changed_after_preview() {
+        let directory = tempdir().unwrap();
+        seed_examples(directory.path());
+        let first_preview =
+            preview_weekly_report(directory.path(), weekly_input(), GENERATED_AT).unwrap();
+        let first = create_weekly_report(
+            directory.path(),
+            weekly_input(),
+            first_preview.source_revisions,
+            first_preview.report_revision,
+            GENERATED_AT,
+        )
+        .unwrap();
+        let replacement_preview =
+            preview_weekly_report(directory.path(), weekly_input(), GENERATED_AT).unwrap();
+        let path = directory.path().join(&first.paths.report);
+        fs::write(&path, "외부에서 변경한 보고서\n").unwrap();
+
+        let error = create_weekly_report(
+            directory.path(),
+            WeeklyReportInput {
+                start_date: replacement_preview.start_date,
+                end_date: replacement_preview.end_date,
+                output: Some(replacement_preview.paths.report),
+                markdown: Some(replacement_preview.files[0].after.clone()),
+            },
+            replacement_preview.source_revisions,
+            replacement_preview.report_revision,
+            GENERATED_AT,
+        )
+        .unwrap_err();
+        assert!(matches!(
+            error,
+            PerformanceNoteWriteError::Write(WriteError::RevisionConflict { .. })
+        ));
+        assert_eq!(
+            fs::read_to_string(path).unwrap(),
+            "외부에서 변경한 보고서\n"
+        );
+    }
+
+    #[test]
+    fn weekly_report_redacts_sensitive_excludes_restricted_and_rejects_downgrades() {
+        let directory = tempdir().unwrap();
+        seed_examples(directory.path());
+        let checkpoint_path = directory
+            .path()
+            .join("records/2026/07/13/CP-20260713-001.json");
+        let mut sensitive: Value =
+            serde_json::from_str(&fs::read_to_string(&checkpoint_path).unwrap()).unwrap();
+        sensitive["confidentiality"] = Value::String("sensitive".to_string());
+        fs::write(
+            &checkpoint_path,
+            serde_json::to_string_pretty(&sensitive).unwrap(),
+        )
+        .unwrap();
+
+        let mut restricted = sensitive.clone();
+        restricted["id"] = Value::String("CP-20260714-002".to_string());
+        restricted["captured_at"] = Value::String("2026-07-14T18:10:00+09:00".to_string());
+        restricted["work_period"]["start"] = Value::String("2026-07-14".to_string());
+        restricted["work_period"]["end"] = Value::String("2026-07-14".to_string());
+        restricted["title"] = Value::String("제한 제목 노출 금지".to_string());
+        restricted["summary"] = Value::String("제한 요약 노출 금지".to_string());
+        restricted["confidentiality"] = Value::String("restricted".to_string());
+        let restricted_path = directory
+            .path()
+            .join("records/2026/07/14/CP-20260714-002.json");
+        fs::create_dir_all(restricted_path.parent().unwrap()).unwrap();
+        fs::write(
+            &restricted_path,
+            serde_json::to_string_pretty(&restricted).unwrap(),
+        )
+        .unwrap();
+
+        let preview =
+            preview_weekly_report(directory.path(), weekly_input(), GENERATED_AT).unwrap();
+        let markdown = &preview.files[0].after;
+        assert_eq!(preview.stats.checkpoint_count, 1);
+        assert_eq!(preview.stats.redacted_checkpoint_count, 1);
+        assert_eq!(preview.stats.excluded_checkpoint_count, 1);
+        assert_eq!(preview.stats.git_commit_count, 0);
+        assert!(markdown.contains("confidentiality: sensitive"));
+        assert!(!markdown.contains("abc1234"));
+        assert!(!markdown.contains("pnpm test auth"));
+        assert!(!markdown.contains("제한 제목 노출 금지"));
+
+        let error = create_weekly_report(
+            directory.path(),
+            WeeklyReportInput {
+                start_date: preview.start_date.clone(),
+                end_date: preview.end_date.clone(),
+                output: Some(preview.paths.report.clone()),
+                markdown: Some(
+                    markdown.replace("confidentiality: sensitive", "confidentiality: normal"),
+                ),
+            },
+            preview.source_revisions,
+            preview.report_revision,
+            GENERATED_AT,
+        )
+        .unwrap_err();
+        assert!(matches!(error, PerformanceNoteWriteError::InvalidInput(_)));
+        assert!(!directory.path().join(&preview.paths.report).exists());
+    }
+
+    #[test]
+    fn performance_note_redacts_sensitive_and_excludes_restricted_checkpoints() {
+        let directory = tempdir().unwrap();
+        seed_examples(directory.path());
+        let checkpoint_path = directory
+            .path()
+            .join("records/2026/07/13/CP-20260713-001.json");
+        let mut sensitive: Value =
+            serde_json::from_str(&fs::read_to_string(&checkpoint_path).unwrap()).unwrap();
+        sensitive["confidentiality"] = Value::String("sensitive".to_string());
+        fs::write(
+            &checkpoint_path,
+            serde_json::to_string_pretty(&sensitive).unwrap(),
+        )
+        .unwrap();
+
+        let mut restricted = sensitive.clone();
+        restricted["id"] = Value::String("CP-20260714-002".to_string());
+        restricted["captured_at"] = Value::String("2026-07-14T18:10:00+09:00".to_string());
+        restricted["work_period"]["start"] = Value::String("2026-07-14".to_string());
+        restricted["work_period"]["end"] = Value::String("2026-07-14".to_string());
+        restricted["title"] = Value::String("제한 제목 노출 금지".to_string());
+        restricted["summary"] = Value::String("제한 요약 노출 금지".to_string());
+        restricted["confidentiality"] = Value::String("restricted".to_string());
+        let restricted_path = directory
+            .path()
+            .join("records/2026/07/14/CP-20260714-002.json");
+        fs::create_dir_all(restricted_path.parent().unwrap()).unwrap();
+        fs::write(
+            &restricted_path,
+            serde_json::to_string_pretty(&restricted).unwrap(),
+        )
+        .unwrap();
+
+        let preview = preview_performance_note(directory.path(), input(), GENERATED_AT).unwrap();
+        let markdown = &preview.files[0].after;
+
+        assert_eq!(preview.checkpoint_count, 1);
+        assert_eq!(preview.redacted_checkpoint_count, 1);
+        assert_eq!(preview.excluded_checkpoint_count, 1);
+        assert_eq!(preview.source_revisions.len(), 4);
+        assert!(markdown.contains("refresh token 갱신과 요청 재시도의 기본 성공 경로"));
+        assert!(markdown.contains("민감 기록의 세부 활동은 보고서에서 생략했습니다."));
+        assert!(!markdown.contains("pnpm test auth"));
+        assert!(!markdown.contains("abc1234"));
+        assert!(!markdown.contains("제한 제목 노출 금지"));
+        assert!(!markdown.contains("제한 요약 노출 금지"));
+
+        let error = create_performance_note(
+            directory.path(),
+            PerformanceNoteInput {
+                work_item_id: "AUTH-142".to_string(),
+                output: Some(preview.paths.report.clone()),
+                markdown: Some(
+                    markdown.replace("confidentiality: sensitive", "confidentiality: normal"),
+                ),
+            },
+            preview.source_revisions.clone(),
+            GENERATED_AT,
+        )
+        .unwrap_err();
+        assert!(matches!(error, PerformanceNoteWriteError::InvalidInput(_)));
+        assert!(!directory.path().join(&preview.paths.report).exists());
+    }
+
+    #[test]
+    fn reviewed_markdown_is_committed_without_regeneration() {
+        let directory = tempdir().unwrap();
+        seed_examples(directory.path());
+        let preview = preview_performance_note(directory.path(), input(), GENERATED_AT).unwrap();
+        let reviewed =
+            "---\nconfidentiality: normal\n---\n\n# 사용자가 검토한 성과 노트\n\n- 확정된 결과\n";
+        let result = create_performance_note(
+            directory.path(),
+            PerformanceNoteInput {
+                work_item_id: "AUTH-142".to_string(),
+                output: Some(preview.paths.report.clone()),
+                markdown: Some(reviewed.to_string()),
+            },
+            preview.source_revisions,
+            GENERATED_AT,
+        )
+        .unwrap();
+
+        assert_eq!(
+            fs::read_to_string(directory.path().join(result.paths.report)).unwrap(),
+            reviewed
         );
     }
 
@@ -1046,6 +2123,7 @@ mod tests {
         let input = PerformanceNoteInput {
             work_item_id: "AUTH-142".to_string(),
             output: Some("reports/performance-notes/reviewed.md".to_string()),
+            markdown: None,
         };
         let preview =
             preview_performance_note(directory.path(), input.clone(), GENERATED_AT).unwrap();

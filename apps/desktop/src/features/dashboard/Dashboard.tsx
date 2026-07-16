@@ -1,4 +1,4 @@
-import { ArrowLeft, CalendarDays, Plus } from "lucide-react";
+import { ArrowLeft, CalendarDays, CalendarRange, Plus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../../ui/Button";
 import { EditorHost } from "./EditorHost";
@@ -6,7 +6,7 @@ import { WorkDateNavigation } from "./WorkDateNavigation";
 import { WorkItemBrowser } from "./WorkItemBrowser";
 import { WorkItemDetailPanel } from "./WorkItemDetailPanel";
 import { WorkspaceEnvironmentMenu } from "./WorkspaceEnvironmentMenu";
-import { formatWorkDateLong } from "./workItemDates";
+import { formatWorkDateLong, workWeekRange } from "./workItemDates";
 import type { WorkspaceController } from "./useWorkspaceController";
 
 interface DashboardProps {
@@ -68,6 +68,22 @@ export function Dashboard({ controller }: DashboardProps) {
               새 업무
             </Button>
 
+            <Button
+              className="sidebar-report-button"
+              variant="ghost"
+              onClick={() => {
+                const range = workWeekRange(controller.dateFilter);
+                controller.setEditor({
+                  mode: "weekly-report",
+                  startDate: range.startDate,
+                  endDate: range.endDate,
+                });
+              }}
+            >
+              <CalendarRange aria-hidden="true" size={16} strokeWidth={1.9} />
+              주간 보고서
+            </Button>
+
             <WorkDateNavigation
               items={snapshot.work_items}
               selectedDateKey={controller.dateFilter}
@@ -101,13 +117,18 @@ export function Dashboard({ controller }: DashboardProps) {
                   </div>
                 </>
               ) : (
-                <button className="main-back-button" onClick={() => setMainView("list")} type="button">
+                <button
+                  aria-label={`${controller.detail?.title ?? "선택한 업무"}에서 업무 목록으로 돌아가기`}
+                  className="main-back-button"
+                  onClick={() => setMainView("list")}
+                  type="button"
+                >
                   <ArrowLeft aria-hidden="true" size={17} strokeWidth={1.8} />
                   <span>
                     <small>
                       {controller.dateFilter ? formatWorkDateLong(controller.dateFilter) : "업무 목록"}
                     </small>
-                    <strong>업무 목록으로 돌아가기</strong>
+                    <strong>{controller.detail?.title ?? "업무 목록으로 돌아가기"}</strong>
                   </span>
                 </button>
               )}

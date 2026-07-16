@@ -218,7 +218,9 @@ fn rust_cli_runs_the_complete_write_and_report_flow() {
         String::from_utf8_lossy(&report.stderr)
     );
     let report: Value = serde_json::from_slice(&report.stdout).unwrap();
-    assert_eq!(report.as_object().unwrap().len(), 3);
+    assert_eq!(report.as_object().unwrap().len(), 5);
+    assert_eq!(report["redacted_checkpoint_count"], 0);
+    assert_eq!(report["excluded_checkpoint_count"], 0);
     let report_path = report["paths"]["report"].as_str().unwrap();
     let markdown = fs::read_to_string(directory.path().join(report_path)).unwrap();
     assert!(markdown.contains("# 1. 작업 개요"));

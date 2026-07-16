@@ -1,5 +1,6 @@
 import { CheckpointEditor } from "../../CheckpointEditor";
 import { PerformanceNoteEditor } from "../../PerformanceNoteEditor";
+import { WeeklyReportEditor } from "../../WeeklyReportEditor";
 import { WorkItemEditor } from "../../WorkItemEditor";
 import type { WorkspaceController } from "./useWorkspaceController";
 
@@ -14,6 +15,17 @@ export function EditorHost({ controller }: EditorHostProps) {
   const projectOptions = Array.from(
     new Set(controller.snapshot?.work_items.map((item) => item.project_id) ?? []),
   ).sort((left, right) => left.localeCompare(right, "ko-KR"));
+
+  if (editor.mode === "weekly-report") {
+    return (
+      <WeeklyReportEditor
+        initialStartDate={editor.startDate}
+        initialEndDate={editor.endDate}
+        onClose={() => controller.setEditor(null)}
+        onCreated={controller.handleWeeklyReportCreated}
+      />
+    );
+  }
 
   if (editor.mode === "performance-note") {
     return (

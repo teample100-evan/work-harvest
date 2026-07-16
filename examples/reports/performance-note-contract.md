@@ -3,6 +3,7 @@ work_item_id: "AUTH-142"
 project_id: "jajak-front"
 generated_from_checkpoints: ["CP-20260713-001"]
 generated_at: "2026-07-14T00:00:00.000Z"
+confidentiality: normal
 ---
 
 # 인증 시스템 개선 성과 노트

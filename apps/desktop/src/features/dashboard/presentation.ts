@@ -60,6 +60,37 @@ const checkpointKindLabels: Record<string, string> = {
   started: "시작",
   progress: "진행",
   final: "완료",
+  correction: "정정",
+  backfill: "사후 기록",
+};
+
+const verificationKindLabels: Record<string, string> = {
+  test: "테스트",
+  build: "빌드",
+  lint: "Lint",
+  manual: "수동 확인",
+  measurement: "측정",
+  review: "리뷰",
+  other: "기타",
+};
+
+const verificationStatusLabels: Record<string, string> = {
+  passed: "통과",
+  failed: "실패",
+  partial: "부분 통과",
+  not_run: "미실행",
+};
+
+const decisionStatusLabels: Record<string, string> = {
+  accepted: "채택",
+  proposed: "제안",
+  superseded: "대체됨",
+};
+
+const confidentialityLabels: Record<string, string> = {
+  normal: "일반",
+  sensitive: "민감",
+  restricted: "제한",
 };
 
 export function formatWorkItemStatus(status: string) {
@@ -72,4 +103,20 @@ export function needsWorkItemStatusBadge(status: string) {
 
 export function formatCheckpointKind(kind: string) {
   return checkpointKindLabels[kind.toLowerCase()] ?? kind;
+}
+
+export function formatVerificationKind(kind: string) {
+  return verificationKindLabels[kind.toLowerCase()] ?? kind;
+}
+
+export function formatVerificationStatus(status: string) {
+  return verificationStatusLabels[status.toLowerCase()] ?? status;
+}
+
+export function formatDecisionStatus(status: string) {
+  return decisionStatusLabels[status.toLowerCase()] ?? status;
+}
+
+export function formatConfidentiality(value: string) {
+  return confidentialityLabels[value.toLowerCase()] ?? value;
 }

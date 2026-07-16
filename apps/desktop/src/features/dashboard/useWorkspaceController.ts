@@ -8,6 +8,7 @@ import {
   openContextMarkdown,
   openExternalUrl,
   openPerformanceNoteMarkdown,
+  openWeeklyReportMarkdown,
   revealWorkItem,
   setDataRoot,
   type DataRootChange,
@@ -16,7 +17,7 @@ import {
 } from "../../desktop";
 import { useSnapshotNotifications } from "../../useSnapshotNotifications";
 import { friendlyError } from "./presentation";
-import { workItemDateKey } from "./workItemDates";
+import { workItemMatchesDate, workItemPrimaryDateKey } from "./workItemDates";
 
 const DATA_ROOT_KEY = "work-harvest:data-root";
 
@@ -32,7 +33,8 @@ export type EditorState =
   | { mode: "create" }
   | { mode: "edit"; workItemId: string }
   | { mode: "checkpoint"; workItemId: string }
-  | { mode: "performance-note"; workItemId: string };
+  | { mode: "performance-note"; workItemId: string }
+  | { mode: "weekly-report"; startDate: string; endDate: string };
 
 export function useWorkspaceController() {
   const [snapshot, setSnapshot] = useState<DataRootSnapshot | null>(null);
@@ -199,9 +201,9 @@ export function useWorkspaceController() {
 
     const hasSelectedDate =
       dateFilter !== null &&
-      snapshot.work_items.some((item) => workItemDateKey(item.updated_at) === dateFilter);
+      snapshot.work_items.some((item) => workItemMatchesDate(item, dateFilter));
     if (!hasSelectedDate) {
-      setDateFilter(workItemDateKey(nextSelectedItem.updated_at));
+      setDateFilter(workItemPrimaryDateKey(nextSelectedItem));
     }
   }, [dateFilter, selectedWorkItemId, snapshot]);
 
@@ -241,7 +243,7 @@ export function useWorkspaceController() {
     const normalizedQuery = query.trim().toLocaleLowerCase("ko-KR");
     return (snapshot?.work_items ?? []).filter((item) => {
       const matchesDate =
-        dateFilter === null || workItemDateKey(item.updated_at) === dateFilter;
+        dateFilter === null || workItemMatchesDate(item, dateFilter);
       const matchesStatus = statusFilter === "all" || item.status === statusFilter;
       const matchesQuery =
         normalizedQuery.length === 0 ||
@@ -297,6 +299,11 @@ export function useWorkspaceController() {
     void runExternalAction(() => openPerformanceNoteMarkdown(report));
   }
 
+  function handleWeeklyReportCreated(report: string) {
+    setEditor(null);
+    void runExternalAction(() => openWeeklyReportMarkdown(report));
+  }
+
   return {
     actionError,
     chooseRoot,
@@ -309,6 +316,7 @@ export function useWorkspaceController() {
     error,
     filteredItems,
     handlePerformanceNoteCreated,
+    handleWeeklyReportCreated,
     handleWorkItemSaved,
     indexActivity,
     lastUpdatedAt,

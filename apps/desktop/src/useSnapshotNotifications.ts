@@ -21,7 +21,10 @@ function notificationBody(value: string) {
 
 function announceSnapshotChanges(previous: DataRootSnapshot, next: DataRootSnapshot) {
   const previousCheckpointIds = new Set(previous.checkpoint_ids);
-  const newCheckpointIds = next.checkpoint_ids.filter((id) => !previousCheckpointIds.has(id));
+  const restrictedCheckpointIds = new Set(next.restricted_checkpoint_ids);
+  const newCheckpointIds = next.checkpoint_ids.filter(
+    (id) => !previousCheckpointIds.has(id) && !restrictedCheckpointIds.has(id),
+  );
 
   if (newCheckpointIds.length > 0) {
     const relatedWorkItem = next.work_items.find(

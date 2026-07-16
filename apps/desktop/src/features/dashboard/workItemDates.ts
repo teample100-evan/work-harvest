@@ -17,8 +17,24 @@ export function workItemDateKey(value: string) {
   return localDateParts(value)?.key ?? UNDATED_KEY;
 }
 
+export function workItemActivityDateKeys(item: WorkItemSummary) {
+  const keys = item.activity_dates
+    .map((value) => workItemDateKey(value))
+    .filter((value) => value !== UNDATED_KEY);
+  return [...new Set(keys)].sort();
+}
+
+export function workItemPrimaryDateKey(item: WorkItemSummary) {
+  return workItemActivityDateKeys(item).at(-1) ?? UNDATED_KEY;
+}
+
+export function workItemMatchesDate(item: WorkItemSummary, dateKey: string) {
+  const dates = workItemActivityDateKeys(item);
+  return dateKey === UNDATED_KEY ? dates.length === 0 : dates.includes(dateKey);
+}
+
 export function formatWorkDateLong(key: string) {
-  if (key === UNDATED_KEY) return "날짜 없는 업무";
+  if (key === UNDATED_KEY) return "작업 기록이 없는 업무";
   const date = new Date(`${key}T00:00:00`);
   return date.toLocaleDateString("ko-KR", {
     year: "numeric",
@@ -26,6 +42,26 @@ export function formatWorkDateLong(key: string) {
     day: "numeric",
     weekday: "long",
   });
+}
+
+function formatLocalCalendarDate(date: Date) {
+  return [date.getFullYear(), date.getMonth() + 1, date.getDate()]
+    .map((part, index) => (index === 0 ? String(part) : String(part).padStart(2, "0")))
+    .join("-");
+}
+
+export function workWeekRange(dateKey: string | null) {
+  const selected =
+    dateKey && dateKey !== UNDATED_KEY ? new Date(`${dateKey}T00:00:00`) : new Date();
+  const anchor = Number.isNaN(selected.getTime()) ? new Date() : selected;
+  const start = new Date(anchor);
+  start.setDate(anchor.getDate() - ((anchor.getDay() + 6) % 7));
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  return {
+    startDate: formatLocalCalendarDate(start),
+    endDate: formatLocalCalendarDate(end),
+  };
 }
 
 export interface WorkDateEntry {
@@ -44,8 +80,10 @@ export interface WorkMonthGroup {
 export function groupWorkItemDates(items: WorkItemSummary[]) {
   const dateCounts = new Map<string, number>();
   for (const item of items) {
-    const key = workItemDateKey(item.updated_at);
-    dateCounts.set(key, (dateCounts.get(key) ?? 0) + 1);
+    const keys = workItemActivityDateKeys(item);
+    for (const key of keys.length > 0 ? keys : [UNDATED_KEY]) {
+      dateCounts.set(key, (dateCounts.get(key) ?? 0) + 1);
+    }
   }
 
   const orderedKeys = [...dateCounts.keys()].sort((left, right) => {
@@ -60,7 +98,7 @@ export function groupWorkItemDates(items: WorkItemSummary[]) {
       groups.set(UNDATED_KEY, {
         key: UNDATED_KEY,
         label: "기타",
-        dates: [{ key, dayLabel: "날짜 없음", weekdayLabel: "", count: dateCounts.get(key) ?? 0 }],
+        dates: [{ key, dayLabel: "기록 없음", weekdayLabel: "", count: dateCounts.get(key) ?? 0 }],
       });
       continue;
     }

@@ -58,11 +58,12 @@ fn build_menu<R: Runtime>(
             false,
         )?)?;
 
-        if let Some((work_item, checkpoint_id)) = snapshot
-            .work_items
-            .iter()
-            .find_map(|item| item.last_checkpoint_id.as_ref().map(|id| (item, id)))
-        {
+        if let Some((work_item, checkpoint_id)) = snapshot.work_items.iter().find_map(|item| {
+            item.last_checkpoint_id
+                .as_ref()
+                .filter(|id| !snapshot.restricted_checkpoint_ids.contains(id))
+                .map(|id| (item, id))
+        }) {
             menu.append(&menu_item(
                 app,
                 "last-checkpoint",

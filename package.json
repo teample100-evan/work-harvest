@@ -1,6 +1,6 @@
 {
   "name": "work-harvest",
-  "version": "0.1.0",
+  "version": "0.3.1",
   "private": true,
   "description": "Agent-neutral local work records and reporting harness",
   "type": "module",
@@ -20,7 +20,7 @@
     "rust:test": "cargo test --workspace",
     "rust:cli:build": "cargo build --release --package work-harvest-cli",
     "rust:cli:sidecar": "node ./scripts/prepare-tauri-sidecar.mjs",
-    "check:all": "pnpm check && pnpm desktop:frontend:build && cargo test --workspace"
+    "check:all": "pnpm run check && pnpm run desktop:frontend:build && cargo test --workspace"
   },
   "engines": {
     "node": ">=24"

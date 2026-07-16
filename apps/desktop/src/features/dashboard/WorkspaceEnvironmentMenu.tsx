@@ -1,6 +1,7 @@
 import { Popover } from "@base-ui/react/popover";
 import { Bell, ChevronRight, FolderOpen, RefreshCw, Settings2, TimerReset } from "lucide-react";
-import type { DataRootSnapshot } from "../../desktop";
+import { useEffect, useState } from "react";
+import { getBuildInfo, type BuildInfo, type DataRootSnapshot } from "../../desktop";
 import type { NotificationState } from "../../useSnapshotNotifications";
 import { Button } from "../../ui/Button";
 
@@ -31,8 +32,23 @@ export function WorkspaceEnvironmentMenu({
   onEnableNotifications,
   onRefresh,
 }: WorkspaceEnvironmentMenuProps) {
+  const [buildInfo, setBuildInfo] = useState<BuildInfo | null>(null);
   const canEnableNotifications =
     notificationState !== "checking" && notificationState !== "granted";
+
+  useEffect(() => {
+    let disposed = false;
+    void getBuildInfo()
+      .then((nextBuildInfo) => {
+        if (!disposed) setBuildInfo(nextBuildInfo);
+      })
+      .catch(() => {
+        if (!disposed) setBuildInfo(null);
+      });
+    return () => {
+      disposed = true;
+    };
+  }, []);
 
   return (
     <footer className="sidebar-footer">
@@ -79,6 +95,23 @@ export function WorkspaceEnvironmentMenu({
                 <span>Context {snapshot.counts.contexts}</span>
                 <span>체크포인트 {snapshot.counts.checkpoints}</span>
               </div>
+
+              {buildInfo ? (
+                <div className="environment-build" aria-label="앱 빌드 정보">
+                  <div>
+                    <strong>앱 빌드</strong>
+                    <span>v{buildInfo.version} · {buildInfo.profile}</span>
+                  </div>
+                  <code title={buildInfo.commit}>
+                    {buildInfo.commit}{buildInfo.dirty ? " · 수정 포함" : ""}
+                  </code>
+                  <small>
+                    {buildInfo.built_at_unix > 0
+                      ? new Date(buildInfo.built_at_unix * 1000).toLocaleString("ko-KR")
+                      : "빌드 시각 미확인"}
+                  </small>
+                </div>
+              ) : null}
 
               <div className="environment-settings" aria-label="백그라운드 실행 설정">
                 <div className="environment-setting-row">

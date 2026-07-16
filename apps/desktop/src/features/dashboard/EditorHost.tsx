@@ -11,6 +11,10 @@ export function EditorHost({ controller }: EditorHostProps) {
   const { editor } = controller;
   if (!editor) return null;
 
+  const projectOptions = Array.from(
+    new Set(controller.snapshot?.work_items.map((item) => item.project_id) ?? []),
+  ).sort((left, right) => left.localeCompare(right, "ko-KR"));
+
   if (editor.mode === "performance-note") {
     return (
       <PerformanceNoteEditor
@@ -34,6 +38,7 @@ export function EditorHost({ controller }: EditorHostProps) {
   return (
     <WorkItemEditor
       mode={editor.mode}
+      projectOptions={projectOptions}
       workItemId={editor.mode === "edit" ? editor.workItemId : undefined}
       onClose={() => controller.setEditor(null)}
       onSaved={controller.handleWorkItemSaved}

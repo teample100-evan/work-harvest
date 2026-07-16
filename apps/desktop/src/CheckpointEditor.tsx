@@ -18,6 +18,7 @@ import {
 } from "./features/checkpoint/CheckpointStepper";
 import { Button } from "./ui/Button";
 import { EditorDialog } from "./ui/EditorDialog";
+import { SelectMenu } from "./ui/SelectMenu";
 
 interface CheckpointEditorProps {
   workItemId: string;
@@ -76,6 +77,62 @@ const checkpointSteps: CheckpointStep[] = [
 ];
 
 const finalStep = checkpointSteps.length - 1;
+
+const checkpointKindOptions: Array<{ value: CheckpointKind; label: string }> = [
+  { value: "progress", label: "진행 기록" },
+  { value: "final", label: "최종 완료" },
+  { value: "backfill", label: "사후 기록" },
+  { value: "correction", label: "정정 기록" },
+];
+
+const workItemStatusOptions: Array<{ value: WorkItemStatus; label: string }> = [
+  { value: "planned", label: "계획" },
+  { value: "in_progress", label: "진행 중" },
+  { value: "blocked", label: "막힘" },
+  { value: "completed", label: "완료" },
+  { value: "cancelled", label: "취소" },
+];
+
+const decisionStatusOptions: Array<{
+  value: CheckpointDraft["decisionStatus"];
+  label: string;
+}> = [
+  { value: "accepted", label: "채택" },
+  { value: "proposed", label: "제안" },
+  { value: "superseded", label: "대체됨" },
+];
+
+const verificationTypeOptions: Array<{
+  value: CheckpointDraft["verificationType"];
+  label: string;
+}> = [
+  { value: "test", label: "테스트" },
+  { value: "build", label: "빌드" },
+  { value: "lint", label: "Lint" },
+  { value: "manual", label: "수동 확인" },
+  { value: "measurement", label: "측정" },
+  { value: "review", label: "리뷰" },
+  { value: "other", label: "기타" },
+];
+
+const verificationStatusOptions: Array<{
+  value: CheckpointDraft["verificationStatus"];
+  label: string;
+}> = [
+  { value: "passed", label: "통과" },
+  { value: "failed", label: "실패" },
+  { value: "partial", label: "부분 통과" },
+  { value: "not_run", label: "미실행" },
+];
+
+const confidentialityOptions: Array<{
+  value: CheckpointDraft["confidentiality"];
+  label: string;
+}> = [
+  { value: "normal", label: "일반" },
+  { value: "sensitive", label: "민감" },
+  { value: "restricted", label: "제한" },
+];
 
 function pad(value: number): string {
   return String(value).padStart(2, "0");
@@ -433,35 +490,27 @@ export function CheckpointEditor({ workItemId, onClose, onSaved }: CheckpointEdi
                   <span className="editor-preserved">ID는 preview에서 안전하게 생성됩니다</span>
                 </div>
                 <div className="editor-grid">
-                  <label className="editor-field">
+                  <div className="editor-field">
                     <span>기록 유형</span>
-                    <select
+                    <SelectMenu
+                      ariaLabel="기록 유형"
+                      className="editor-select-menu"
+                      options={checkpointKindOptions}
                       value={draft.kind}
-                      onChange={(event) => {
-                        const kind = event.target.value as CheckpointKind;
-                        setDraft({ ...draft, kind });
-                      }}
-                    >
-                      <option value="progress">진행 기록</option>
-                      <option value="final">최종 완료</option>
-                      <option value="backfill">사후 기록</option>
-                      <option value="correction">정정 기록</option>
-                    </select>
-                  </label>
-                  <label className="editor-field">
+                      onChange={(kind) => setDraft({ ...draft, kind })}
+                    />
+                  </div>
+                  <div className="editor-field">
                     <span>기록 후 상태</span>
-                    <select
+                    <SelectMenu
+                      ariaLabel="기록 후 상태"
+                      className="editor-select-menu"
+                      options={workItemStatusOptions}
                       value={draft.kind === "final" ? "completed" : draft.statusAfter}
                       disabled={draft.kind === "final"}
-                      onChange={(event) => setDraft({ ...draft, statusAfter: event.target.value as WorkItemStatus })}
-                    >
-                      <option value="planned">계획</option>
-                      <option value="in_progress">진행 중</option>
-                      <option value="blocked">막힘</option>
-                      <option value="completed">완료</option>
-                      <option value="cancelled">취소</option>
-                    </select>
-                  </label>
+                      onChange={(statusAfter) => setDraft({ ...draft, statusAfter })}
+                    />
+                  </div>
                   <label className="editor-field">
                     <span>기록 시각</span>
                     <input
@@ -524,39 +573,42 @@ export function CheckpointEditor({ workItemId, onClose, onSaved }: CheckpointEdi
                     <span>결정</span>
                     <input value={draft.decisionSummary} placeholder="결정한 내용" onChange={(event) => setDraft({ ...draft, decisionSummary: event.target.value })} />
                   </label>
-                  <label className="editor-field">
+                  <div className="editor-field">
                     <span>결정 상태</span>
-                    <select value={draft.decisionStatus} onChange={(event) => setDraft({ ...draft, decisionStatus: event.target.value as CheckpointDraft["decisionStatus"] })}>
-                      <option value="accepted">채택</option>
-                      <option value="proposed">제안</option>
-                      <option value="superseded">대체됨</option>
-                    </select>
-                  </label>
+                    <SelectMenu
+                      ariaLabel="결정 상태"
+                      className="editor-select-menu"
+                      onChange={(decisionStatus) => setDraft({ ...draft, decisionStatus })}
+                      options={decisionStatusOptions}
+                      value={draft.decisionStatus}
+                    />
+                  </div>
                   <label className="editor-field full">
                     <span>결정 이유</span>
                     <textarea rows={2} required={draft.decisionSummary.trim().length > 0} value={draft.decisionRationale} placeholder="왜 이 결정을 내렸나요?" onChange={(event) => setDraft({ ...draft, decisionRationale: event.target.value })} />
                   </label>
-                  <label className="editor-field">
+                  <div className="editor-field">
                     <span>검증 유형</span>
-                    <select value={draft.verificationType} onChange={(event) => setDraft({ ...draft, verificationType: event.target.value as CheckpointDraft["verificationType"] })}>
-                      <option value="test">테스트</option>
-                      <option value="build">빌드</option>
-                      <option value="lint">Lint</option>
-                      <option value="manual">수동 확인</option>
-                      <option value="measurement">측정</option>
-                      <option value="review">리뷰</option>
-                      <option value="other">기타</option>
-                    </select>
-                  </label>
-                  <label className="editor-field">
+                    <SelectMenu
+                      ariaLabel="검증 유형"
+                      className="editor-select-menu"
+                      onChange={(verificationType) => setDraft({ ...draft, verificationType })}
+                      options={verificationTypeOptions}
+                      value={draft.verificationType}
+                    />
+                  </div>
+                  <div className="editor-field">
                     <span>검증 상태</span>
-                    <select value={draft.verificationStatus} onChange={(event) => setDraft({ ...draft, verificationStatus: event.target.value as CheckpointDraft["verificationStatus"] })}>
-                      <option value="passed">통과</option>
-                      <option value="failed">실패</option>
-                      <option value="partial">부분 통과</option>
-                      <option value="not_run">미실행</option>
-                    </select>
-                  </label>
+                    <SelectMenu
+                      ariaLabel="검증 상태"
+                      className="editor-select-menu"
+                      onChange={(verificationStatus) =>
+                        setDraft({ ...draft, verificationStatus })
+                      }
+                      options={verificationStatusOptions}
+                      value={draft.verificationStatus}
+                    />
+                  </div>
                   <label className="editor-field full">
                     <span>검증 설명</span>
                     <input value={draft.verificationDescription} placeholder="어떤 검증을 수행했나요?" onChange={(event) => setDraft({ ...draft, verificationDescription: event.target.value })} />
@@ -624,14 +676,16 @@ export function CheckpointEditor({ workItemId, onClose, onSaved }: CheckpointEdi
                   <label className="editor-field"><span>검증 완료</span><textarea rows={3} value={draft.contextVerificationCompleted} onChange={(event) => setDraft({ ...draft, contextVerificationCompleted: event.target.value })} /></label>
                   <label className="editor-field"><span>검증 대기</span><textarea rows={3} value={draft.contextVerificationPending} onChange={(event) => setDraft({ ...draft, contextVerificationPending: event.target.value })} /></label>
                   <label className="editor-field full"><span>리스크</span><textarea rows={3} value={draft.contextRisks} onChange={(event) => setDraft({ ...draft, contextRisks: event.target.value })} /></label>
-                  <label className="editor-field">
+                  <div className="editor-field">
                     <span>기밀 수준</span>
-                    <select value={draft.confidentiality} onChange={(event) => setDraft({ ...draft, confidentiality: event.target.value as CheckpointDraft["confidentiality"] })}>
-                      <option value="normal">일반</option>
-                      <option value="sensitive">민감</option>
-                      <option value="restricted">제한</option>
-                    </select>
-                  </label>
+                    <SelectMenu
+                      ariaLabel="기밀 수준"
+                      className="editor-select-menu"
+                      onChange={(confidentiality) => setDraft({ ...draft, confidentiality })}
+                      options={confidentialityOptions}
+                      value={draft.confidentiality}
+                    />
+                  </div>
                 </div>
                 </section>
               ) : null}

@@ -490,6 +490,18 @@ fn open_checkpoint_markdown(
 }
 
 #[tauri::command]
+fn open_external_url(app: AppHandle, url: String) -> Result<(), String> {
+    let is_web_url = url.starts_with("https://") || url.starts_with("http://");
+    if !is_web_url {
+        return Err("Only HTTP(S) URLs can be opened externally".to_string());
+    }
+
+    app.opener()
+        .open_url(url, None::<String>)
+        .map_err(|error| format!("Could not open URL in browser: {error}"))
+}
+
+#[tauri::command]
 fn open_performance_note_markdown(
     app: AppHandle,
     state: State<'_, DesktopState>,
@@ -530,6 +542,7 @@ pub fn run() {
             reveal_work_item,
             open_context_markdown,
             open_checkpoint_markdown,
+            open_external_url,
             open_performance_note_markdown
         ])
         .setup(|app| {

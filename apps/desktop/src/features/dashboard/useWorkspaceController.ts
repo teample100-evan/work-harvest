@@ -6,6 +6,7 @@ import {
   inspectDataRoot,
   openCheckpointMarkdown,
   openContextMarkdown,
+  openExternalUrl,
   openPerformanceNoteMarkdown,
   revealWorkItem,
   setDataRoot,
@@ -15,6 +16,7 @@ import {
 } from "../../desktop";
 import { useSnapshotNotifications } from "../../useSnapshotNotifications";
 import { friendlyError } from "./presentation";
+import { workItemDateKey } from "./workItemDates";
 
 const DATA_ROOT_KEY = "work-harvest:data-root";
 
@@ -42,6 +44,7 @@ export function useWorkspaceController() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [dateFilter, setDateFilter] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [detailRevision, setDetailRevision] = useState(0);
@@ -152,6 +155,7 @@ export function useWorkspaceController() {
         setError(`파일 변경 감시에 실패했습니다: ${event.payload}`);
       }),
       listen<string>("tray-work-item-selected", (event) => {
+        setDateFilter(null);
         setQuery("");
         setStatusFilter("all");
         setSelectedWorkItemId(event.payload);
@@ -182,13 +186,24 @@ export function useWorkspaceController() {
 
   useEffect(() => {
     if (!snapshot || snapshot.work_items.length === 0) {
+      setDateFilter(null);
       setSelectedWorkItemId(null);
       return;
     }
-    if (!snapshot.work_items.some((item) => item.id === selectedWorkItemId)) {
-      setSelectedWorkItemId(snapshot.work_items[0].id);
+
+    const selectedItem = snapshot.work_items.find((item) => item.id === selectedWorkItemId);
+    const nextSelectedItem = selectedItem ?? snapshot.work_items[0];
+    if (!selectedItem) {
+      setSelectedWorkItemId(nextSelectedItem.id);
     }
-  }, [selectedWorkItemId, snapshot]);
+
+    const hasSelectedDate =
+      dateFilter !== null &&
+      snapshot.work_items.some((item) => workItemDateKey(item.updated_at) === dateFilter);
+    if (!hasSelectedDate) {
+      setDateFilter(workItemDateKey(nextSelectedItem.updated_at));
+    }
+  }, [dateFilter, selectedWorkItemId, snapshot]);
 
   useEffect(() => {
     if (!selectedWorkItemId) {
@@ -225,15 +240,17 @@ export function useWorkspaceController() {
   const filteredItems = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase("ko-KR");
     return (snapshot?.work_items ?? []).filter((item) => {
+      const matchesDate =
+        dateFilter === null || workItemDateKey(item.updated_at) === dateFilter;
       const matchesStatus = statusFilter === "all" || item.status === statusFilter;
       const matchesQuery =
         normalizedQuery.length === 0 ||
         `${item.id} ${item.title} ${item.project_id} ${item.current_state ?? ""}`
           .toLocaleLowerCase("ko-KR")
           .includes(normalizedQuery);
-      return matchesStatus && matchesQuery;
+      return matchesDate && matchesStatus && matchesQuery;
     });
-  }, [query, snapshot, statusFilter]);
+  }, [dateFilter, query, snapshot, statusFilter]);
 
   useEffect(() => {
     if (
@@ -267,6 +284,7 @@ export function useWorkspaceController() {
   }
 
   async function handleWorkItemSaved(workItemId: string) {
+    setDateFilter(null);
     setQuery("");
     setStatusFilter("all");
     selectedWorkItemIdRef.current = workItemId;
@@ -282,6 +300,7 @@ export function useWorkspaceController() {
   return {
     actionError,
     chooseRoot,
+    dateFilter,
     detail,
     detailError,
     detailLoading,
@@ -300,12 +319,14 @@ export function useWorkspaceController() {
       runExternalAction(() => openCheckpointMarkdown(checkpointId)),
     openContext: (workItemId: string) =>
       runExternalAction(() => openContextMarkdown(workItemId)),
+    openExternalUrl: (url: string) => runExternalAction(() => openExternalUrl(url)),
     query,
     refresh,
     revealWorkItem: (workItemId: string) =>
       runExternalAction(() => revealWorkItem(workItemId)),
     selectedWorkItemId,
     setEditor,
+    setDateFilter,
     setQuery,
     setSelectedWorkItemId,
     setStatusFilter,

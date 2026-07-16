@@ -47,3 +47,29 @@ export function formatTimestamp(value: string) {
     minute: "2-digit",
   });
 }
+
+const workItemStatusLabels: Record<string, string> = {
+  planned: "예정",
+  in_progress: "진행 중",
+  blocked: "막힘",
+  completed: "완료",
+  cancelled: "취소됨",
+};
+
+const checkpointKindLabels: Record<string, string> = {
+  started: "시작",
+  progress: "진행",
+  final: "완료",
+};
+
+export function formatWorkItemStatus(status: string) {
+  return workItemStatusLabels[status] ?? status;
+}
+
+export function needsWorkItemStatusBadge(status: string) {
+  return status === "in_progress" || status === "blocked";
+}
+
+export function formatCheckpointKind(kind: string) {
+  return checkpointKindLabels[kind.toLowerCase()] ?? kind;
+}

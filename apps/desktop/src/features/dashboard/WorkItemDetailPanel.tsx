@@ -1,7 +1,12 @@
 import { CheckpointDetails } from "../../CheckpointDetails";
 import type { WorkItemDetail } from "../../desktop";
 import { DetailList } from "./DetailList";
-import { formatTimestamp } from "./presentation";
+import {
+  formatTimestamp,
+  formatCheckpointKind,
+  formatWorkItemStatus,
+  needsWorkItemStatusBadge,
+} from "./presentation";
 
 interface WorkItemDetailPanelProps {
   actionError: string | null;
@@ -14,6 +19,7 @@ interface WorkItemDetailPanelProps {
   onEdit: (workItemId: string) => void;
   onOpenCheckpoint: (checkpointId: string) => void;
   onOpenContext: (workItemId: string) => void;
+  onOpenExternalUrl: (url: string) => void;
   onReveal: (workItemId: string) => void;
 }
 
@@ -28,6 +34,7 @@ export function WorkItemDetailPanel({
   onEdit,
   onOpenCheckpoint,
   onOpenContext,
+  onOpenExternalUrl,
   onReveal,
 }: WorkItemDetailPanelProps) {
   return (
@@ -40,15 +47,30 @@ export function WorkItemDetailPanel({
         </div>
       )}
       {!detailLoading && detail && (
-        <div className="detail-content">
+        <div className="detail-content typeset-work-detail">
           <header className="detail-header">
             <div>
-              <p className="section-label">
-                {detail.project_id} · {detail.id}
-              </p>
               <h2>{detail.title}</h2>
+              <p className="detail-meta">
+                <span>{detail.project_id}</span>
+                <span>{formatWorkItemStatus(detail.status)}</span>
+                <span>갱신 {formatTimestamp(detail.updated_at)}</span>
+              </p>
+              <div className="detail-classification">
+                <span className="detail-id">ID {detail.id}</span>
+                {detail.classification.work_types.map((type) => (
+                  <span key={type}>{type}</span>
+                ))}
+                {detail.classification.tags.map((tag) => (
+                  <span key={tag}>#{tag}</span>
+                ))}
+              </div>
             </div>
-            <span className={`status status-${detail.status}`}>{detail.status}</span>
+            {needsWorkItemStatusBadge(detail.status) && (
+              <span className={`status status-${detail.status}`}>
+                {formatWorkItemStatus(detail.status)}
+              </span>
+            )}
           </header>
 
           <div className="detail-toolbar">
@@ -59,52 +81,44 @@ export function WorkItemDetailPanel({
             >
               작업 기록 추가
             </button>
-            <button
-              className="inline-action report-action"
-              onClick={() => onCreatePerformanceNote(detail.id)}
-              type="button"
-            >
-              성과 노트 만들기
-            </button>
             <button className="inline-action" onClick={() => onEdit(detail.id)} type="button">
               업무 편집
             </button>
-            <button className="inline-action" onClick={() => onReveal(detail.id)} type="button">
-              Finder에서 보기
-            </button>
-            <button className="inline-action" onClick={() => onOpenContext(detail.id)} type="button">
-              Context.md 열기
-            </button>
+            <details className="detail-actions-menu">
+              <summary aria-label="기타 업무 작업">···</summary>
+              <div className="detail-actions-popover">
+                <button onClick={() => onCreatePerformanceNote(detail.id)} type="button">
+                  성과 노트 만들기
+                </button>
+                <button onClick={() => onOpenContext(detail.id)} type="button">
+                  Context.md 열기
+                </button>
+                <button onClick={() => onReveal(detail.id)} type="button">
+                  Finder에서 보기
+                </button>
+              </div>
+            </details>
           </div>
           {actionError && <div className="alert error compact-alert" role="alert">{actionError}</div>}
 
-          <p className="detail-objective">{detail.objective}</p>
-          <div className="tag-row">
-            {detail.classification.work_types.map((type) => (
-              <span className="tag" key={type}>
-                {type}
-              </span>
-            ))}
-            {detail.classification.tags.map((tag) => (
-              <span className="tag subtle" key={tag}>
-                #{tag}
-              </span>
-            ))}
-          </div>
+          <section className="detail-introduction" aria-labelledby="detail-objective-heading">
+            <p className="section-label" id="detail-objective-heading">업무 설명</p>
+            <p className="detail-objective">{detail.objective}</p>
+          </section>
 
-          <div className="detail-card-grid">
-            <section className="detail-card current-state-card">
+          <section className="detail-section detail-context-section">
+            <div className="detail-context-block">
               <p className="section-label">현재 상태</p>
-              <p>{detail.context?.current_state ?? "현재 Context가 없습니다."}</p>
-            </section>
-            <section className="detail-card">
+              <p>{detail.context?.current_state ?? "현재 기록된 상태가 없습니다."}</p>
+            </div>
+            <div className="detail-context-block">
               <p className="section-label">다음 작업</p>
               <DetailList
                 empty="등록된 다음 작업이 없습니다."
                 items={detail.context?.next_steps ?? []}
               />
-            </section>
-          </div>
+            </div>
+          </section>
 
           <section className="detail-section">
             <div className="detail-section-heading">
@@ -129,8 +143,8 @@ export function WorkItemDetailPanel({
                     <div className="timeline-body">
                       <div className="timeline-meta">
                         <span>{formatTimestamp(checkpoint.captured_at)}</span>
-                        <span>{checkpoint.kind}</span>
-                        <span>{checkpoint.status_after}</span>
+                        <span>{formatCheckpointKind(checkpoint.kind)}</span>
+                        <span>{formatWorkItemStatus(checkpoint.status_after)}</span>
                       </div>
                       <h4>{checkpoint.title}</h4>
                       <p>{checkpoint.summary}</p>
@@ -149,6 +163,7 @@ export function WorkItemDetailPanel({
                       <CheckpointDetails
                         checkpoint={checkpoint}
                         onOpenMarkdown={onOpenCheckpoint}
+                        onOpenUrl={onOpenExternalUrl}
                       />
                     </div>
                   </article>
@@ -157,7 +172,6 @@ export function WorkItemDetailPanel({
             )}
           </section>
 
-          <p className="detail-updated">마지막 업무 갱신 {formatTimestamp(detail.updated_at)}</p>
         </div>
       )}
     </article>

@@ -617,6 +617,10 @@ export function openCheckpointMarkdown(checkpointId: string) {
   return invoke<void>("open_checkpoint_markdown", { checkpointId });
 }
 
+export function openExternalUrl(url: string) {
+  return invoke<void>("open_external_url", { url });
+}
+
 export function openPerformanceNoteMarkdown(report: string) {
   return invoke<void>("open_performance_note_markdown", { report });
 }

@@ -21,8 +21,10 @@ pub use queries::{
 pub use reports::{
     PerformanceNoteCheckpoint, PerformanceNoteInput, PerformanceNotePaths,
     PerformanceNoteSourceRevision, PerformanceNoteWriteError, PerformanceNoteWritePreview,
-    PerformanceNoteWriteResult, create_performance_note, create_performance_note_from_current,
-    performance_note_markdown_path, preview_performance_note, render_performance_note,
+    PerformanceNoteWriteResult, WeeklyReportInput, WeeklyReportStats, WeeklyReportWritePreview,
+    WeeklyReportWriteResult, create_performance_note, create_performance_note_from_current,
+    create_weekly_report, performance_note_markdown_path, preview_performance_note,
+    preview_weekly_report, render_performance_note, weekly_report_markdown_path,
 };
 pub use work_items::{
     ContextFileInput, ContextGitInput, ContextVerificationInput, StoredContextFile,

@@ -44,6 +44,26 @@ export function formatWorkDateLong(key: string) {
   });
 }
 
+function formatLocalCalendarDate(date: Date) {
+  return [date.getFullYear(), date.getMonth() + 1, date.getDate()]
+    .map((part, index) => (index === 0 ? String(part) : String(part).padStart(2, "0")))
+    .join("-");
+}
+
+export function workWeekRange(dateKey: string | null) {
+  const selected =
+    dateKey && dateKey !== UNDATED_KEY ? new Date(`${dateKey}T00:00:00`) : new Date();
+  const anchor = Number.isNaN(selected.getTime()) ? new Date() : selected;
+  const start = new Date(anchor);
+  start.setDate(anchor.getDate() - ((anchor.getDay() + 6) % 7));
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  return {
+    startDate: formatLocalCalendarDate(start),
+    endDate: formatLocalCalendarDate(end),
+  };
+}
+
 export interface WorkDateEntry {
   key: string;
   dayLabel: string;

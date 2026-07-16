@@ -69,7 +69,7 @@ test("a prepared sidecar preserves the native CLI and executable mode", () => {
 
 test("release tags must match every distributed package version", () => {
   const script = path.join(repositoryRoot, "scripts", "verify-release-version.mjs");
-  const valid = spawnSync(process.execPath, [script, "v0.2.0"], {
+  const valid = spawnSync(process.execPath, [script, "v0.3.0"], {
     cwd: repositoryRoot,
     encoding: "utf8",
   });

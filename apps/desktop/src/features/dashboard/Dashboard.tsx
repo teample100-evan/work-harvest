@@ -1,4 +1,4 @@
-import { ArrowLeft, CalendarDays, Plus } from "lucide-react";
+import { ArrowLeft, CalendarDays, CalendarRange, Plus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../../ui/Button";
 import { EditorHost } from "./EditorHost";
@@ -6,7 +6,7 @@ import { WorkDateNavigation } from "./WorkDateNavigation";
 import { WorkItemBrowser } from "./WorkItemBrowser";
 import { WorkItemDetailPanel } from "./WorkItemDetailPanel";
 import { WorkspaceEnvironmentMenu } from "./WorkspaceEnvironmentMenu";
-import { formatWorkDateLong } from "./workItemDates";
+import { formatWorkDateLong, workWeekRange } from "./workItemDates";
 import type { WorkspaceController } from "./useWorkspaceController";
 
 interface DashboardProps {
@@ -66,6 +66,22 @@ export function Dashboard({ controller }: DashboardProps) {
             >
               <Plus aria-hidden="true" size={16} strokeWidth={1.9} />
               새 업무
+            </Button>
+
+            <Button
+              className="sidebar-report-button"
+              variant="ghost"
+              onClick={() => {
+                const range = workWeekRange(controller.dateFilter);
+                controller.setEditor({
+                  mode: "weekly-report",
+                  startDate: range.startDate,
+                  endDate: range.endDate,
+                });
+              }}
+            >
+              <CalendarRange aria-hidden="true" size={16} strokeWidth={1.9} />
+              주간 보고서
             </Button>
 
             <WorkDateNavigation

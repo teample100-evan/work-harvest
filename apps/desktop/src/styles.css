@@ -1191,6 +1191,13 @@ h2 {
   margin: -4px 2px 14px;
 }
 
+.field-error {
+  margin: 12px 0 0;
+  color: #8b3028;
+  font-size: var(--text-sm);
+  font-weight: 650;
+}
+
 .editor-footer {
   position: sticky;
   bottom: 0;

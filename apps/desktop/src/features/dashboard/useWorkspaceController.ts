@@ -8,6 +8,7 @@ import {
   openContextMarkdown,
   openExternalUrl,
   openPerformanceNoteMarkdown,
+  openWeeklyReportMarkdown,
   revealWorkItem,
   setDataRoot,
   type DataRootChange,
@@ -32,7 +33,8 @@ export type EditorState =
   | { mode: "create" }
   | { mode: "edit"; workItemId: string }
   | { mode: "checkpoint"; workItemId: string }
-  | { mode: "performance-note"; workItemId: string };
+  | { mode: "performance-note"; workItemId: string }
+  | { mode: "weekly-report"; startDate: string; endDate: string };
 
 export function useWorkspaceController() {
   const [snapshot, setSnapshot] = useState<DataRootSnapshot | null>(null);
@@ -297,6 +299,11 @@ export function useWorkspaceController() {
     void runExternalAction(() => openPerformanceNoteMarkdown(report));
   }
 
+  function handleWeeklyReportCreated(report: string) {
+    setEditor(null);
+    void runExternalAction(() => openWeeklyReportMarkdown(report));
+  }
+
   return {
     actionError,
     chooseRoot,
@@ -309,6 +316,7 @@ export function useWorkspaceController() {
     error,
     filteredItems,
     handlePerformanceNoteCreated,
+    handleWeeklyReportCreated,
     handleWorkItemSaved,
     indexActivity,
     lastUpdatedAt,

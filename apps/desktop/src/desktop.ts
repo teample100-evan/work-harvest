@@ -486,6 +486,45 @@ export interface PerformanceNoteWriteResult {
   commit: WorkItemWriteResult["commit"];
 }
 
+export interface WeeklyReportInput {
+  start_date: string;
+  end_date: string;
+  output?: string | null;
+  markdown?: string | null;
+}
+
+export interface WeeklyReportStats {
+  work_item_count: number;
+  checkpoint_count: number;
+  redacted_checkpoint_count: number;
+  excluded_checkpoint_count: number;
+  unknown_period_checkpoint_count: number;
+  git_commit_count: number;
+  verification_count: number;
+  passed_verification_count: number;
+  failed_verification_count: number;
+  partial_verification_count: number;
+  not_run_verification_count: number;
+}
+
+export interface WeeklyReportWritePreview {
+  start_date: string;
+  end_date: string;
+  stats: WeeklyReportStats;
+  paths: PerformanceNotePaths;
+  source_revisions: PerformanceNoteSourceRevision[];
+  files: WorkItemFileChange[];
+}
+
+export interface WeeklyReportWriteResult {
+  start_date: string;
+  end_date: string;
+  stats: WeeklyReportStats;
+  paths: PerformanceNotePaths;
+  source_revisions: PerformanceNoteSourceRevision[];
+  commit: WorkItemWriteResult["commit"];
+}
+
 export type DesktopWriteErrorKind =
   | "root_required"
   | "not_found"
@@ -626,6 +665,25 @@ export function createPerformanceNote(
   });
 }
 
+export function previewWeeklyReport(input: WeeklyReportInput, generatedAt: string) {
+  return invoke<WeeklyReportWritePreview>("preview_weekly_report", {
+    input,
+    generatedAt,
+  });
+}
+
+export function createWeeklyReport(
+  input: WeeklyReportInput,
+  expected: PerformanceNoteSourceRevision[],
+  generatedAt: string,
+) {
+  return invoke<WeeklyReportWriteResult>("create_weekly_report", {
+    input,
+    expected,
+    generatedAt,
+  });
+}
+
 export function revealWorkItem(workItemId: string) {
   return invoke<void>("reveal_work_item", { workItemId });
 }
@@ -644,4 +702,8 @@ export function openExternalUrl(url: string) {
 
 export function openPerformanceNoteMarkdown(report: string) {
   return invoke<void>("open_performance_note_markdown", { report });
+}
+
+export function openWeeklyReportMarkdown(report: string) {
+  return invoke<void>("open_weekly_report_markdown", { report });
 }

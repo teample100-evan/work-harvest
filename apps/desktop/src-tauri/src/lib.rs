@@ -17,17 +17,20 @@ use work_harvest_core::{
     CheckpointInput, CheckpointWriteError, CheckpointWritePreview, CheckpointWriteResult,
     DataRootIndex, DataRootSnapshot, DataRootUpdate, PerformanceNoteInput,
     PerformanceNoteSourceRevision, PerformanceNoteWriteError, PerformanceNoteWritePreview,
-    PerformanceNoteWriteResult, WorkItemCreateInput, WorkItemDetail, WorkItemEditRevisions,
+    PerformanceNoteWriteResult, WeeklyReportInput, WeeklyReportWritePreview,
+    WeeklyReportWriteResult, WorkItemCreateInput, WorkItemDetail, WorkItemEditRevisions,
     WorkItemEditSnapshot, WorkItemUpdatePatch, WorkItemWriteError, WorkItemWritePreview,
     WorkItemWriteResult, WriteError, capture_checkpoint as capture_checkpoint_record,
     checkpoint_markdown_path, context_markdown_path,
-    create_performance_note as create_performance_note_record, create_work_item as create_item,
+    create_performance_note as create_performance_note_record,
+    create_weekly_report as create_weekly_report_record, create_work_item as create_item,
     get_work_item_detail as get_detail, performance_note_markdown_path,
     preview_capture_checkpoint as preview_checkpoint_record,
     preview_create_work_item as preview_create_item,
     preview_performance_note as preview_performance_note_record,
-    preview_update_work_item as preview_update_item, read_work_item_for_edit,
-    update_work_item as update_item, work_item_directory,
+    preview_update_work_item as preview_update_item,
+    preview_weekly_report as preview_weekly_report_record, read_work_item_for_edit,
+    update_work_item as update_item, weekly_report_markdown_path, work_item_directory,
 };
 
 const WATCH_QUIET_PERIOD: Duration = Duration::from_millis(350);
@@ -477,6 +480,27 @@ fn create_performance_note(
 }
 
 #[tauri::command]
+fn preview_weekly_report(
+    state: State<'_, DesktopState>,
+    input: WeeklyReportInput,
+    generated_at: String,
+) -> Result<WeeklyReportWritePreview, DesktopWriteError> {
+    preview_weekly_report_record(selected_write_root(&state)?, input, &generated_at)
+        .map_err(desktop_performance_note_error)
+}
+
+#[tauri::command]
+fn create_weekly_report(
+    state: State<'_, DesktopState>,
+    input: WeeklyReportInput,
+    expected: Vec<PerformanceNoteSourceRevision>,
+    generated_at: String,
+) -> Result<WeeklyReportWriteResult, DesktopWriteError> {
+    create_weekly_report_record(selected_write_root(&state)?, input, expected, &generated_at)
+        .map_err(desktop_performance_note_error)
+}
+
+#[tauri::command]
 fn reveal_work_item(
     app: AppHandle,
     state: State<'_, DesktopState>,
@@ -540,6 +564,19 @@ fn open_performance_note_markdown(
         .map_err(|error| format!("Could not open performance note Markdown: {error}"))
 }
 
+#[tauri::command]
+fn open_weekly_report_markdown(
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+    report: String,
+) -> Result<(), String> {
+    let path = weekly_report_markdown_path(selected_root(&state)?, &report)
+        .map_err(|error| error.to_string())?;
+    app.opener()
+        .open_path(path.to_string_lossy().into_owned(), None::<String>)
+        .map_err(|error| format!("Could not open weekly report Markdown: {error}"))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -566,11 +603,14 @@ pub fn run() {
             capture_checkpoint,
             preview_performance_note,
             create_performance_note,
+            preview_weekly_report,
+            create_weekly_report,
             reveal_work_item,
             open_context_markdown,
             open_checkpoint_markdown,
             open_external_url,
-            open_performance_note_markdown
+            open_performance_note_markdown,
+            open_weekly_report_markdown
         ])
         .setup(|app| {
             always_on::install(app)?;

@@ -15,6 +15,7 @@
 | 자동 활동 이벤트 | append-only | 날짜와 실행 근거 보조 |
 | 성과 노트 | 생성 후 수동 편집 가능 | 하나의 업무 항목과 체크포인트를 성과 템플릿으로 정리 |
 | 기간 보고서 | 재생성 가능 | 기간별 업무 항목 집계 |
+| 휴지통 manifest | 복원 또는 영구 정리 전까지 유지 | 업무 항목과 연결 체크포인트의 복구 가능한 제거 |
 
 ## 스키마
 
@@ -34,6 +35,7 @@
   write.lock
   transactions/
   quarantine/
+  trash/
 ```
 
 구체적인 잠금·충돌·복구 규약은 [ADR 0002](./adr/0002-recoverable-local-write-transactions.md)를 따른다.
@@ -50,6 +52,19 @@
 브랜치와 세션은 업무 항목의 식별자가 아니라 작업 위치와 근거다. 같은 결과물을 여러 브랜치 또는 세션에서 수행할 수 있고, 한 세션에서 여러 독립 업무 항목을 다룰 수도 있다.
 
 `source.agent: manual`은 사용자가 별도 기록 세션에서 전달한 내용처럼 현재 에이전트 작업 밖에서 수행된 업무를 기록할 때 사용한다. 사용자 설명은 유효한 기록 출처지만 독립 검증을 의미하지 않는다. 확인되지 않은 결과는 설명이나 영향에 그 한계를 표시하고 후속 검증으로 남긴다.
+
+## 업무 범위와 보고 등급
+
+업무 항목은 실제 수행 맥락과 주간 보고 중요도를 서로 다른 필드로 저장한다.
+
+- `scope: company`: 회사 업무
+- `scope: personal`: 개인 업무
+- `scope: unclassified`: 이전 데이터처럼 아직 분류하지 않은 업무
+- `reporting.mode: primary`: 독립적인 결과·문제 해결로 주간 보고에 기본 포함
+- `reporting.mode: supporting`: 다른 성과를 지원한 병합·동기화·포맷팅·환경 정리 같은 활동. 명시적으로 요청할 때만 주간 보고에 포함
+- `reporting.mode: excluded`: 주간 보고에서 제외
+
+`scope`와 `reporting.mode`는 독립적이다. 회사 저장소에서 수행했다는 이유만으로 모든 활동이 회사 주간 보고의 독립 업무가 되지는 않는다. 기존 파일에 필드가 없으면 Core는 각각 `unclassified`, `primary`로 읽어 데이터 호환성을 유지한다.
 
 ## 업무 context
 
@@ -69,6 +84,8 @@ work-items/<id>/context.md
 
 수정 가능한 업무 필드는 제목, 상태, 목표, 기대 결과, 분류, 저장소와 링크다. `id`, `project_id`, `created_at`, `context_path`는 생성 후 바꾸지 않는다. 상태가 `completed`로 바뀔 때 `completed_at`을 명시하지 않으면 수정 시각을 사용하고, 완료가 아닌 상태로 바뀌면 `null`로 되돌린다. 수정할 때 업무 항목과 Context의 `updated_at`은 같은 값으로 갱신한다.
 
+업무 범위와 보고 등급도 revision 기반 수정 계약으로 바꿀 수 있다. 보고 등급을 `supporting` 또는 `excluded`로 바꿀 때는 `reporting.exclusion_reason`에 판단 근거를 남길 수 있다.
+
 Context patch는 전달된 현재 상태, 결정, 파일, 검증, 다음 작업, 리스크와 Git 기준점만 교체한다. `context.md`는 저장된 두 JSON에서 항상 다시 생성하며 수동 편집본을 원본으로 사용하지 않는다. JSON은 2칸 들여쓰기와 마지막 개행을 사용하고 중첩 저장소·링크 객체의 필드 순서를 보존해 기존 Node CLI와 불필요한 diff가 생기지 않게 한다.
 
 체크포인트 JSON도 같은 이름의 Markdown으로 렌더링한다.
@@ -77,6 +94,12 @@ Context patch는 전달된 현재 상태, 결정, 파일, 검증, 다음 작업,
 records/YYYY/MM/DD/<checkpoint_id>.json
 records/YYYY/MM/DD/<checkpoint_id>.md
 ```
+
+## 휴지통과 복원
+
+데스크톱 앱에서 업무 항목을 제거하면 즉시 삭제하지 않는다. 업무 항목의 세 파일과 연결된 모든 체크포인트 JSON·Markdown을 `.work-harvest/trash/<work_item_id>/files/`로 같은 변경 집합 안에서 이동하고 manifest를 기록한다. 이동 도중 오류가 나면 이미 옮긴 파일을 원래 위치로 되돌린다.
+
+복원할 때 원래 경로에 파일이 하나라도 있으면 덮어쓰지 않고 충돌로 중단한다. 휴지통 데이터는 업무 목록, 검증과 보고서 집계 대상이 아니다.
 
 ## 날짜
 

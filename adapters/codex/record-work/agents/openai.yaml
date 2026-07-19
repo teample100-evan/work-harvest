@@ -1,4 +1,4 @@
 interface:
   display_name: "Record Work"
-  short_description: "코드·문서·비코드 업무를 체크포인트로 안전하게 기록"
-  default_prompt: "$record-work를 사용해 현재 세션이나 사후 설명으로 전달한 업무를 정확한 근거와 함께 기록해줘."
+  short_description: "회사·개인 업무를 분류하고 기록·주간 보고 초안을 생성"
+  default_prompt: "$record-work를 사용해 회사·개인 업무를 구분해 기록하거나 회사 업무만으로 주간 보고 초안을 만들어줘."

@@ -83,6 +83,8 @@ export async function listWorkItems({
       project_id: workItem.project_id,
       title: workItem.title,
       status: workItem.status,
+      scope: workItem.scope ?? "unclassified",
+      reporting_mode: workItem.reporting?.mode ?? "primary",
       initiative_id: workItem.classification.initiative_id,
       updated_at: workItem.updated_at,
       current_state: context.current_state,
@@ -111,8 +113,29 @@ export async function showWorkItem({ root, validators, workItemId }) {
     validators,
     workItemId,
   });
+  const normalizedWorkItem = {
+    schema_version: workItem.schema_version,
+    id: workItem.id,
+    project_id: workItem.project_id,
+    title: workItem.title,
+    status: workItem.status,
+    objective: workItem.objective,
+    desired_outcomes: workItem.desired_outcomes,
+    classification: workItem.classification,
+    scope: workItem.scope ?? "unclassified",
+    reporting: workItem.reporting ?? {
+      mode: "primary",
+      exclusion_reason: null,
+    },
+    repositories: workItem.repositories,
+    links: workItem.links,
+    context_path: workItem.context_path,
+    created_at: workItem.created_at,
+    updated_at: workItem.updated_at,
+    completed_at: workItem.completed_at,
+  };
   return {
-    work_item: workItem,
+    work_item: normalizedWorkItem,
     context: contextResult.context,
     last_checkpoint: lastCheckpoint,
     paths: {

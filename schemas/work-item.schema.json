@@ -95,6 +95,35 @@
         }
       }
     },
+    "scope": {
+      "description": "업무가 속한 기본 범위. 기존 기록은 unclassified로 해석한다.",
+      "type": "string",
+      "enum": ["company", "personal", "unclassified"]
+    },
+    "reporting": {
+      "description": "주간 보고서에서 이 업무를 다루는 방식",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "exclusion_reason"],
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": ["primary", "supporting", "excluded"]
+        },
+        "exclusion_reason": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 240
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
     "repositories": {
       "type": "array",
       "items": {

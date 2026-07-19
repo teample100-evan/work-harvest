@@ -25,6 +25,7 @@ interface WorkItemDetailPanelProps {
   onOpenContext: (workItemId: string) => void;
   onOpenExternalUrl: (url: string) => void;
   onReveal: (workItemId: string) => void;
+  onTrash: (workItemId: string) => void;
 }
 
 export function WorkItemDetailPanel({
@@ -40,6 +41,7 @@ export function WorkItemDetailPanel({
   onOpenContext,
   onOpenExternalUrl,
   onReveal,
+  onTrash,
 }: WorkItemDetailPanelProps) {
   return (
     <article className="panel detail-panel" aria-busy={detailLoading}>
@@ -62,6 +64,20 @@ export function WorkItemDetailPanel({
               </p>
               <div className="detail-classification">
                 <span className="detail-id">ID {detail.id}</span>
+                <span>
+                  {detail.scope === "company"
+                    ? "회사 업무"
+                    : detail.scope === "personal"
+                      ? "개인 업무"
+                      : "미분류"}
+                </span>
+                <span>
+                  {detail.reporting.mode === "primary"
+                    ? "주요 업무"
+                    : detail.reporting.mode === "supporting"
+                      ? "지원 활동"
+                      : "보고 제외"}
+                </span>
                 {detail.classification.work_types.map((type) => (
                   <span key={type}>{type}</span>
                 ))}
@@ -117,6 +133,20 @@ export function WorkItemDetailPanel({
                       onClick={() => onReveal(detail.id)}
                     >
                       Finder에서 보기
+                    </Menu.Item>
+                    <Menu.Item
+                      className="detail-actions-item danger"
+                      onClick={() => {
+                        if (
+                          window.confirm(
+                            "이 업무와 연결된 체크포인트를 휴지통으로 이동할까요? 작업 환경 메뉴에서 복구할 수 있습니다.",
+                          )
+                        ) {
+                          onTrash(detail.id);
+                        }
+                      }}
+                    >
+                      휴지통으로 이동
                     </Menu.Item>
                   </Menu.Popup>
                 </Menu.Positioner>

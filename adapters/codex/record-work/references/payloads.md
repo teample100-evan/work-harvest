@@ -13,6 +13,10 @@ title: 인증 갱신 테스트
 objective: 토큰 갱신과 재시도 동작을 자동화된 테스트로 검증한다.
 desired_outcomes:
   - 동시 인증 실패 상황이 테스트로 검증된다.
+scope: company
+reporting:
+  mode: primary
+  exclusion_reason: null
 classification:
   initiative_id: authentication
   work_types:
@@ -44,6 +48,14 @@ context:
     commit: abc1234
     checked_at: 2026-07-13T09:00:00+09:00
 ```
+
+`scope` must be `company` or `personal` for new records. `reporting.mode` must be:
+
+- `primary`: independent weekly-report row
+- `supporting`: useful operational evidence, hidden from the default report
+- `excluded`: retained record that must not appear in reports
+
+Use `supporting` for branch synchronization, PR mechanics, formatting, dependency installation, and similar steps unless they independently produced a manager-visible outcome.
 
 Run:
 

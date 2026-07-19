@@ -30,6 +30,8 @@ export interface WorkItemSummary {
   project_id: string;
   title: string;
   status: string;
+  scope: WorkItemScope;
+  reporting_mode: WorkItemReportingMode;
   updated_at: string;
   activity_dates: string[];
   current_state: string | null;
@@ -145,6 +147,8 @@ export interface WorkItemDetail {
   objective: string;
   desired_outcomes: string[];
   classification: WorkItemClassification;
+  scope: WorkItemScope;
+  reporting: StoredWorkItemReporting;
   created_at: string;
   updated_at: string;
   completed_at: string | null;
@@ -158,6 +162,9 @@ export type WorkItemStatus =
   | "blocked"
   | "completed"
   | "cancelled";
+
+export type WorkItemScope = "company" | "personal" | "unclassified";
+export type WorkItemReportingMode = "primary" | "supporting" | "excluded";
 
 export interface FileRevision {
   sha256: string;
@@ -174,6 +181,16 @@ export interface StoredWorkItemClassification {
   initiative_id: string | null;
   work_types: string[];
   tags: string[];
+}
+
+export interface StoredWorkItemReporting {
+  mode: WorkItemReportingMode;
+  exclusion_reason: string | null;
+}
+
+export interface WorkItemReportingInput {
+  mode?: WorkItemReportingMode;
+  exclusion_reason?: string | null;
 }
 
 export interface StoredContextFile {
@@ -202,6 +219,8 @@ export interface WorkItemDocument {
   objective: string;
   desired_outcomes: string[];
   classification: StoredWorkItemClassification;
+  scope: WorkItemScope;
+  reporting: StoredWorkItemReporting;
   repositories: unknown[];
   links: unknown[];
   context_path: string;
@@ -269,6 +288,8 @@ export interface WorkItemCreateInput {
   objective: string;
   desired_outcomes?: string[];
   classification?: WorkItemClassificationInput;
+  scope?: WorkItemScope;
+  reporting?: WorkItemReportingInput;
   repositories?: unknown[];
   links?: unknown[];
   context?: WorkContextInput;
@@ -288,6 +309,8 @@ export interface WorkItemUpdatePatch {
   objective?: string;
   desired_outcomes?: string[];
   classification?: WorkItemClassificationInput;
+  scope?: WorkItemScope;
+  reporting?: WorkItemReportingInput;
   context?: WorkContextPatch;
 }
 
@@ -313,6 +336,19 @@ export interface WorkItemWriteResult {
     transaction_id: string;
     written_paths: string[];
   };
+}
+
+export interface TrashedWorkItem {
+  work_item_id: string;
+  title: string;
+  trashed_at: string;
+  paths: string[];
+}
+
+export interface WorkItemTrashResult {
+  work_item_id: string;
+  trash_path: string;
+  moved_paths: string[];
 }
 
 export type CheckpointKind = "progress" | "final" | "correction" | "backfill";
@@ -489,6 +525,8 @@ export interface PerformanceNoteWriteResult {
 export interface WeeklyReportInput {
   start_date: string;
   end_date: string;
+  scope?: WorkItemScope | "all";
+  include_supporting?: boolean;
   output?: string | null;
   markdown?: string | null;
 }
@@ -499,6 +537,7 @@ export interface WeeklyReportStats {
   redacted_checkpoint_count: number;
   excluded_checkpoint_count: number;
   unknown_period_checkpoint_count: number;
+  reporting_excluded_checkpoint_count: number;
   git_commit_count: number;
   verification_count: number;
   passed_verification_count: number;
@@ -623,6 +662,18 @@ export function updateWorkItem(
     patch,
     now,
   });
+}
+
+export function trashWorkItem(workItemId: string, trashedAt: string) {
+  return invoke<WorkItemTrashResult>("trash_work_item", { workItemId, trashedAt });
+}
+
+export function listTrashedWorkItems() {
+  return invoke<TrashedWorkItem[]>("list_trashed_work_items");
+}
+
+export function restoreWorkItem(workItemId: string) {
+  return invoke<WorkItemTrashResult>("restore_work_item", { workItemId });
 }
 
 export function previewCaptureCheckpoint(

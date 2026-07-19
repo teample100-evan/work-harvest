@@ -1,4 +1,4 @@
-import { ArrowLeft, CalendarDays, CalendarRange, Plus } from "lucide-react";
+import { ArrowLeft, CalendarDays, CalendarRange, Plus, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../../ui/Button";
 import { EditorHost } from "./EditorHost";
@@ -6,6 +6,7 @@ import { WorkDateNavigation } from "./WorkDateNavigation";
 import { WorkItemBrowser } from "./WorkItemBrowser";
 import { WorkItemDetailPanel } from "./WorkItemDetailPanel";
 import { WorkspaceEnvironmentMenu } from "./WorkspaceEnvironmentMenu";
+import { TrashPage } from "./TrashPage";
 import { formatWorkDateLong, workWeekRange } from "./workItemDates";
 import type { WorkspaceController } from "./useWorkspaceController";
 
@@ -16,7 +17,7 @@ interface DashboardProps {
 export function Dashboard({ controller }: DashboardProps) {
   const mainScrollRef = useRef<HTMLDivElement>(null);
   const listScrollTopRef = useRef(0);
-  const [mainView, setMainView] = useState<"list" | "detail">("list");
+  const [mainView, setMainView] = useState<"list" | "detail" | "trash">("list");
   const { snapshot } = controller;
   const errorCount = snapshot?.issues.filter((issue) => issue.severity === "error").length ?? 0;
   const hasVisibleWorkItem = controller.filteredItems.some(
@@ -24,7 +25,7 @@ export function Dashboard({ controller }: DashboardProps) {
   );
 
   useEffect(() => {
-    if (mainView === "detail") {
+    if (mainView !== "list") {
       mainScrollRef.current?.scrollTo({ top: 0 });
       return;
     }
@@ -90,6 +91,16 @@ export function Dashboard({ controller }: DashboardProps) {
               onSelect={handleDateSelect}
             />
 
+            <Button
+              aria-current={mainView === "trash" ? "page" : undefined}
+              className={`sidebar-trash-button ${mainView === "trash" ? "active" : ""}`}
+              variant="ghost"
+              onClick={() => setMainView("trash")}
+            >
+              <Trash2 aria-hidden="true" size={16} strokeWidth={1.9} />
+              휴지통
+            </Button>
+
             <WorkspaceEnvironmentMenu
               errorCount={errorCount}
               notificationError={controller.notificationError}
@@ -101,7 +112,7 @@ export function Dashboard({ controller }: DashboardProps) {
             />
           </aside>
 
-          <main className={`main-pane ${mainView === "detail" ? "detail-view" : "list-view"}`}>
+          <main className={`main-pane ${mainView}-view`}>
             <header className="main-topbar">
               {mainView === "list" ? (
                 <>
@@ -116,6 +127,14 @@ export function Dashboard({ controller }: DashboardProps) {
                     </div>
                   </div>
                 </>
+              ) : mainView === "trash" ? (
+                <div className="main-topbar-title">
+                  <Trash2 aria-hidden="true" size={17} strokeWidth={1.8} />
+                  <div>
+                    <p>복구 가능한 기록</p>
+                    <h2>휴지통</h2>
+                  </div>
+                </div>
               ) : (
                 <button
                   aria-label={`${controller.detail?.title ?? "선택한 업무"}에서 업무 목록으로 돌아가기`}
@@ -160,6 +179,8 @@ export function Dashboard({ controller }: DashboardProps) {
                     onStatusFilterChange={controller.setStatusFilter}
                   />
                 </section>
+              ) : mainView === "trash" ? (
+                <TrashPage onWorkspaceRefresh={controller.refresh} />
               ) : (
                 <section className="detail-stage detail-page" aria-label="선택한 업무 상세">
                   <WorkItemDetailPanel
@@ -185,6 +206,11 @@ export function Dashboard({ controller }: DashboardProps) {
                     onOpenExternalUrl={(url) => void controller.openExternalUrl(url)}
                     onOpenContext={(workItemId) => void controller.openContext(workItemId)}
                     onReveal={(workItemId) => void controller.revealWorkItem(workItemId)}
+                    onTrash={(workItemId) => {
+                      void controller.handleTrashWorkItem(workItemId).then((moved) => {
+                        if (moved) setMainView("trash");
+                      });
+                    }}
                   />
                 </section>
               )}

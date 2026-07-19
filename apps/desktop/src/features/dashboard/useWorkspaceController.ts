@@ -11,6 +11,7 @@ import {
   openWeeklyReportMarkdown,
   revealWorkItem,
   setDataRoot,
+  trashWorkItem,
   type DataRootChange,
   type DataRootSnapshot,
   type WorkItemDetail,
@@ -294,6 +295,21 @@ export function useWorkspaceController() {
     await refresh();
   }
 
+  async function handleTrashWorkItem(workItemId: string) {
+    setActionError(null);
+    try {
+      await trashWorkItem(workItemId, new Date().toISOString());
+      selectedWorkItemIdRef.current = null;
+      setSelectedWorkItemId(null);
+      setDetail(null);
+      await refresh();
+      return true;
+    } catch (nextError) {
+      setActionError(friendlyError(nextError));
+      return false;
+    }
+  }
+
   function handlePerformanceNoteCreated(report: string) {
     setEditor(null);
     void runExternalAction(() => openPerformanceNoteMarkdown(report));
@@ -318,6 +334,7 @@ export function useWorkspaceController() {
     handlePerformanceNoteCreated,
     handleWeeklyReportCreated,
     handleWorkItemSaved,
+    handleTrashWorkItem,
     indexActivity,
     lastUpdatedAt,
     loading,

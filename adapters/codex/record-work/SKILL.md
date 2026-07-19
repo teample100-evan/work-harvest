@@ -1,6 +1,6 @@
 ---
 name: record-work
-description: Record live or retrospectively described work into the local Work Harvest as a dated checkpoint and refresh its handoff context. Use for code, documentation, planning, research, communication, operations, or other reportable work when the user asks to record today's work, save progress, record work performed outside the current Codex task, prepare a handoff, finalize a work item, backfill missed work, or correct an earlier record. Trigger on Korean requests such as "오늘 작업은 여기까지 기록해줘", "현재 단계까지 기록해줘", "지난주에 한 작업을 기록해줘", "이 문서 작업을 기록해줘", "새 세션용 인수인계를 갱신해줘", and "업무 완료 기록을 작성해줘".
+description: Record work into the local Work Harvest, classify company versus personal work, control weekly-report inclusion, and prepare scope-filtered weekly report drafts. Use when the user asks to record progress, prepare a handoff, finalize or correct a work item, backfill missed work, exclude supporting activity, or draft a company-only weekly report.
 ---
 
 # Record Work
@@ -20,6 +20,8 @@ The wrapper uses `WORK_HARVEST_CLI_BIN` when set. Otherwise it prefers the CLI b
 ## Workflow
 
 ### 1. Interpret the request
+
+If the user asks for a weekly report, company form, or a scope-filtered summary rather than a new record, skip checkpoint creation and follow **Weekly reporting** below.
 
 Map the request to one checkpoint kind:
 
@@ -61,11 +63,15 @@ Match candidates using project, objective, intended outcome, initiative, reposit
 - Reuse a work item only when the match is clear.
 - If multiple candidates are materially plausible, ask the user to select one.
 - Create a new work item only when no existing item represents the same reportable objective.
+- Apply the manager test before creating a work item: **Would a manager recognize this as an independent result?** If not, attach it to the related objective or classify it as supporting activity.
+- Branch synchronization, PR creation, formatting, dependency installation, routine release steps, and local environment maintenance are `supporting` by default. They become `primary` only when they independently solve a material organizational problem.
 - Prefer an existing external issue ID. Otherwise use `WH-YYYYMMDD-<short-slug>`.
 - Reuse one work item across branches or sessions when they pursue the same reportable outcome.
 - Split work performed in one branch or session when it produces materially separate reportable outcomes.
 - Permit empty `repositories` for documentation, planning, communication, research, and operations work.
 - Use only the exact `work_types` values: `planning`, `design`, `implementation`, `bugfix`, `refactoring`, `testing`, `documentation`, `operation`, `communication`, `research`, or `other`. Use singular `operation`, never `operations`.
+- Set `scope` explicitly to `company` or `personal`. Ask one concise question when repository ownership and user context do not resolve it safely.
+- Set `reporting.mode` to `primary`, `supporting`, or `excluded`. Use `primary` only for a standalone reportable outcome.
 
 Read [references/payloads.md](references/payloads.md) before creating a work item or checkpoint payload.
 
@@ -141,11 +147,33 @@ Return a compact confirmation containing:
 
 Do not turn the confirmation into a weekly report.
 
+### 8. Weekly reporting
+
+For a company-only report preview, run:
+
+```bash
+<skill-dir>/scripts/wh report weekly --start <YYYY-MM-DD> --end <YYYY-MM-DD> --scope company --json
+```
+
+This includes only `scope: company` and `reporting.mode: primary` by default. Add `--include-supporting` only when the user explicitly asks to see supporting activity. For personal reporting, pass `--scope personal`; omit `--scope` only when the user asks for everything.
+
+Use the Markdown preview from `files[0].after` as the evidence source, then adapt it to the user's requested company form. Do not silently add `personal`, `unclassified`, `supporting`, or `excluded` work to a company report.
+
+When an existing item is classified incorrectly, update it instead of deleting its evidence:
+
+```bash
+<skill-dir>/scripts/wh work-item update <id> --input <file|-> --json
+```
+
+Use `reporting.mode: excluded` to remove it from reports, or `supporting` to preserve it as operational context without creating a standalone weekly-report row. Use the app's reversible trash only for records the user explicitly wants removed as records.
+
 ## No-op and ambiguity rules
 
 - Do not create an empty checkpoint when nothing changed since the last checkpoint.
 - Do not merge separate reportable outcomes just because they occurred in one Codex task.
 - Do not split one outcome into a new work item just because the session or date changed.
+- Do not create a standalone primary work item for routine operational steps that merely support another outcome.
+- Do not infer that a company-owned repository makes every activity company-reportable; `scope` and `reporting.mode` are separate decisions.
 - Do not use a branch name as the sole reason to merge or split work items.
 - Do not reject non-code work because no repository or Git evidence exists.
 - Do not present user-reported work as independently verified.

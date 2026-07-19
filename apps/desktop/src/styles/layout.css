@@ -79,6 +79,24 @@ body {
   background: rgb(0 0 0 / 5%);
 }
 
+.sidebar-trash-button {
+  flex: none;
+  justify-content: flex-start;
+  width: calc(100% - 24px);
+  min-height: 42px;
+  margin: 0 12px 8px;
+  padding-inline: 10px;
+  color: var(--color-text-muted);
+  font-size: var(--text-ui);
+  font-weight: 570;
+}
+
+.sidebar-trash-button:hover,
+.sidebar-trash-button.active {
+  color: var(--color-text-strong);
+  background: #d7d7d2;
+}
+
 .work-date-navigation {
   flex: 1;
   min-height: 0;
@@ -547,6 +565,11 @@ body {
 
 .detail-page {
   width: min(100%, 980px);
+  margin-inline: auto;
+}
+
+.trash-page {
+  width: min(100%, 900px);
   margin-inline: auto;
 }
 

@@ -97,6 +97,8 @@ pub struct PerformanceNoteWriteResult {
 pub struct WeeklyReportInput {
     pub start_date: String,
     pub end_date: String,
+    pub scope: Option<String>,
+    pub include_supporting: Option<bool>,
     pub output: Option<String>,
     pub markdown: Option<String>,
 }
@@ -108,6 +110,7 @@ pub struct WeeklyReportStats {
     pub redacted_checkpoint_count: usize,
     pub excluded_checkpoint_count: usize,
     pub unknown_period_checkpoint_count: usize,
+    pub reporting_excluded_checkpoint_count: usize,
     pub git_commit_count: usize,
     pub verification_count: usize,
     pub passed_verification_count: usize,
@@ -817,6 +820,7 @@ fn weekly_report_stats(
     redacted_checkpoint_count: usize,
     excluded_checkpoint_count: usize,
     unknown_period_checkpoint_count: usize,
+    reporting_excluded_checkpoint_count: usize,
 ) -> WeeklyReportStats {
     let work_item_count = checkpoints
         .iter()
@@ -850,6 +854,7 @@ fn weekly_report_stats(
         redacted_checkpoint_count,
         excluded_checkpoint_count,
         unknown_period_checkpoint_count,
+        reporting_excluded_checkpoint_count,
         git_commit_count: git_commits.len(),
         verification_count: verifications.len(),
         passed_verification_count: verifications
@@ -1038,6 +1043,8 @@ fn render_weekly_report(
     stats: &WeeklyReportStats,
     start_date: &str,
     end_date: &str,
+    scope: &str,
+    include_supporting: bool,
     generated_at: &str,
 ) -> String {
     let checkpoint_ids = checkpoints
@@ -1056,13 +1063,17 @@ fn render_weekly_report(
         .collect::<Vec<_>>();
 
     format!(
-        "---\nreport_type: weekly\nstart_date: {}\nend_date: {}\ngenerated_from_checkpoints: {}\ngenerated_at: {}\nconfidentiality: {confidentiality}\n---\n\n# 주간 성과보고서 · {start_date} ~ {end_date}\n\n> 구조화된 체크포인트에서 자동 집계한 초안입니다. 기간, Git 변경, 검증 결과와 다음 작업을 확인한 뒤 공유하세요.\n\n## 한눈에 보기\n\n- 업무: {}개\n- 포함 체크포인트: {}개\n- 민감 체크포인트: {}개 세부 정보 생략\n- 제한 체크포인트: {}개 제외\n- 기간 미확인 체크포인트: {}개 제외\n- Git 커밋: {}개\n- 검증: {}개 · 통과 {} · 실패 {} · 부분 통과 {} · 미실행 {}\n\n## 업무별 성과\n\n{}\n\n## Git 변경\n\n{}\n\n## 테스트·검증 결과\n\n{}\n\n## 위험 및 차단 사항\n\n{}\n\n## 다음 주 우선순위\n\n{}\n\n## 근거 기록\n\n{}\n",
+        "---\nreport_type: weekly\nstart_date: {}\nend_date: {}\nscope: {}\ninclude_supporting: {}\ngenerated_from_checkpoints: {}\ngenerated_at: {}\nconfidentiality: {confidentiality}\n---\n\n# 주간 성과보고서 · {start_date} ~ {end_date}\n\n> 구조화된 체크포인트에서 자동 집계한 초안입니다. 기간, 업무 범위, 보고 포함 기준과 검증 결과를 확인한 뒤 공유하세요.\n\n## 한눈에 보기\n\n- 범위: {}\n- 업무: {}개\n- 포함 체크포인트: {}개\n- 보고 기준 제외: {}개\n- 민감 체크포인트: {}개 세부 정보 생략\n- 제한 체크포인트: {}개 제외\n- 기간 미확인 체크포인트: {}개 제외\n- Git 커밋: {}개\n- 검증: {}개 · 통과 {} · 실패 {} · 부분 통과 {} · 미실행 {}\n\n## 업무별 성과\n\n{}\n\n## Git 변경\n\n{}\n\n## 테스트·검증 결과\n\n{}\n\n## 위험 및 차단 사항\n\n{}\n\n## 다음 주 우선순위\n\n{}\n\n## 근거 기록\n\n{}\n",
         serde_json::to_string(start_date).expect("serializing a date cannot fail"),
         serde_json::to_string(end_date).expect("serializing a date cannot fail"),
+        serde_json::to_string(scope).expect("serializing scope cannot fail"),
+        include_supporting,
         serde_json::to_string(&checkpoint_ids).expect("serializing checkpoint IDs cannot fail"),
         serde_json::to_string(generated_at).expect("serializing a timestamp cannot fail"),
+        scope,
         stats.work_item_count,
         stats.checkpoint_count,
+        stats.reporting_excluded_checkpoint_count,
         stats.redacted_checkpoint_count,
         stats.excluded_checkpoint_count,
         stats.unknown_period_checkpoint_count,
@@ -1388,9 +1399,21 @@ fn prepare_weekly_report(
     let WeeklyReportInput {
         start_date,
         end_date,
+        scope,
+        include_supporting,
         output,
         markdown,
     } = input;
+    let scope = scope.unwrap_or_else(|| "all".to_string());
+    if !matches!(
+        scope.as_str(),
+        "all" | "company" | "personal" | "unclassified"
+    ) {
+        return Err(PerformanceNoteWriteError::InvalidInput(
+            "weekly report scope must be all, company, personal, or unclassified".to_string(),
+        ));
+    }
+    let include_supporting = include_supporting.unwrap_or(false);
     let start = parse_report_date(&start_date, "start_date")?;
     let end = parse_report_date(&end_date, "end_date")?;
     if start > end {
@@ -1418,7 +1441,26 @@ fn prepare_weekly_report(
             .cmp(&right.checkpoint.captured_at)
             .then_with(|| left.checkpoint.id.cmp(&right.checkpoint.id))
     });
-    let sources = weekly_work_item_sources(writer.root(), &checkpoints)?;
+    let mut sources = weekly_work_item_sources(writer.root(), &checkpoints)?;
+    let included_work_item_ids = sources
+        .iter()
+        .filter(|source| {
+            (scope == "all" || source.work_item.scope == scope)
+                && match source.work_item.reporting.mode.as_str() {
+                    "primary" => true,
+                    "supporting" => include_supporting,
+                    "excluded" => false,
+                    _ => false,
+                }
+        })
+        .map(|source| source.work_item.id.clone())
+        .collect::<BTreeSet<_>>();
+    let reporting_excluded_checkpoint_count = checkpoints
+        .iter()
+        .filter(|entry| !included_work_item_ids.contains(&entry.checkpoint.work_item_id))
+        .count();
+    checkpoints.retain(|entry| included_work_item_ids.contains(&entry.checkpoint.work_item_id));
+    sources.retain(|source| included_work_item_ids.contains(&source.work_item.id));
     let report_checkpoints = checkpoints
         .iter()
         .filter_map(checkpoint_for_report)
@@ -1436,12 +1478,19 @@ fn prepare_weekly_report(
         redacted_checkpoint_count,
         excluded_checkpoint_count,
         unknown_period_checkpoint_count,
+        reporting_excluded_checkpoint_count,
     );
     let output = output.unwrap_or_else(|| {
+        let scope_suffix = if scope == "all" {
+            String::new()
+        } else {
+            format!("_{scope}")
+        };
         format!(
-            "reports/weekly/{}_to_{}.md",
+            "reports/weekly/{}_to_{}{}.md",
             start_date.replace('-', ""),
-            end_date.replace('-', "")
+            end_date.replace('-', ""),
+            scope_suffix,
         )
     });
     let output_path = normalize_output_path(&output)?;
@@ -1491,6 +1540,8 @@ fn prepare_weekly_report(
             &stats,
             &start_date,
             &end_date,
+            &scope,
+            include_supporting,
             generated_at,
         )
     });
@@ -1732,6 +1783,8 @@ mod tests {
         WeeklyReportInput {
             start_date: "2026-07-13".to_string(),
             end_date: "2026-07-19".to_string(),
+            scope: None,
+            include_supporting: None,
             output: None,
             markdown: None,
         }
@@ -1764,6 +1817,50 @@ mod tests {
             rendered,
             include_str!("../../../examples/reports/performance-note-contract.md")
         );
+    }
+
+    #[test]
+    fn weekly_report_filters_scope_and_supporting_work() {
+        let directory = tempdir().unwrap();
+        seed_examples(directory.path());
+        let path = directory.path().join("work-items/AUTH-142/work-item.json");
+        let mut work_item: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        work_item["scope"] = Value::String("company".to_string());
+        work_item["reporting"] = serde_json::json!({
+            "mode": "supporting",
+            "exclusion_reason": "독립 성과가 아닌 지원 활동"
+        });
+        fs::write(&path, serde_json::to_vec_pretty(&work_item).unwrap()).unwrap();
+
+        let excluded = preview_weekly_report(
+            directory.path(),
+            WeeklyReportInput {
+                scope: Some("company".to_string()),
+                include_supporting: Some(false),
+                ..weekly_input()
+            },
+            GENERATED_AT,
+        )
+        .unwrap();
+        assert_eq!(excluded.stats.work_item_count, 0);
+        assert_eq!(excluded.stats.reporting_excluded_checkpoint_count, 1);
+        assert_eq!(
+            excluded.paths.report,
+            "reports/weekly/20260713_to_20260719_company.md"
+        );
+
+        let included = preview_weekly_report(
+            directory.path(),
+            WeeklyReportInput {
+                scope: Some("company".to_string()),
+                include_supporting: Some(true),
+                ..weekly_input()
+            },
+            GENERATED_AT,
+        )
+        .unwrap();
+        assert_eq!(included.stats.work_item_count, 1);
+        assert_eq!(included.stats.reporting_excluded_checkpoint_count, 0);
     }
 
     #[test]
@@ -1876,6 +1973,8 @@ mod tests {
             WeeklyReportInput {
                 start_date: replacement_preview.start_date.clone(),
                 end_date: replacement_preview.end_date.clone(),
+                scope: None,
+                include_supporting: None,
                 output: Some(replacement_preview.paths.report.clone()),
                 markdown: Some(reviewed.clone()),
             },
@@ -1915,6 +2014,8 @@ mod tests {
             WeeklyReportInput {
                 start_date: replacement_preview.start_date,
                 end_date: replacement_preview.end_date,
+                scope: None,
+                include_supporting: None,
                 output: Some(replacement_preview.paths.report),
                 markdown: Some(replacement_preview.files[0].after.clone()),
             },
@@ -1984,6 +2085,8 @@ mod tests {
             WeeklyReportInput {
                 start_date: preview.start_date.clone(),
                 end_date: preview.end_date.clone(),
+                scope: None,
+                include_supporting: None,
                 output: Some(preview.paths.report.clone()),
                 markdown: Some(
                     markdown.replace("confidentiality: sensitive", "confidentiality: normal"),

@@ -6,6 +6,7 @@ use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
+use walkdir::WalkDir;
 
 const DEFAULT_CURRENT_STATE: &str = "업무 항목을 생성했으며 구체적인 작업을 시작하기 전이다.";
 
@@ -40,6 +41,17 @@ pub enum WorkItemWriteError {
     },
     #[error("Work item assets are inconsistent: {0}")]
     Inconsistent(String),
+    #[error("Trashed work item was not found: {0}")]
+    TrashNotFound(String),
+    #[error("Work item trash already exists or cannot be restored: {0}")]
+    TrashConflict(String),
+    #[error("Could not {operation} trashed work item asset {path}: {source}")]
+    TrashIo {
+        operation: &'static str,
+        path: String,
+        #[source]
+        source: std::io::Error,
+    },
     #[error(transparent)]
     Write(#[from] WriteError),
 }
@@ -56,6 +68,36 @@ pub struct StoredWorkItemClassification {
     pub initiative_id: Option<String>,
     pub work_types: Vec<String>,
     pub tags: Vec<String>,
+}
+
+fn default_work_item_scope() -> String {
+    "unclassified".to_string()
+}
+
+fn default_reporting_mode() -> String {
+    "primary".to_string()
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WorkItemReportingInput {
+    pub mode: Option<String>,
+    pub exclusion_reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct StoredWorkItemReporting {
+    #[serde(default = "default_reporting_mode")]
+    pub mode: String,
+    pub exclusion_reason: Option<String>,
+}
+
+impl Default for StoredWorkItemReporting {
+    fn default() -> Self {
+        Self {
+            mode: default_reporting_mode(),
+            exclusion_reason: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -126,6 +168,8 @@ pub struct WorkItemCreateInput {
     pub objective: String,
     pub desired_outcomes: Option<Vec<String>>,
     pub classification: Option<WorkItemClassificationInput>,
+    pub scope: Option<String>,
+    pub reporting: Option<WorkItemReportingInput>,
     pub repositories: Option<Vec<Value>>,
     pub links: Option<Vec<Value>>,
     pub context_path: Option<String>,
@@ -145,6 +189,10 @@ pub struct WorkItemDocument {
     pub objective: String,
     pub desired_outcomes: Vec<String>,
     pub classification: StoredWorkItemClassification,
+    #[serde(default = "default_work_item_scope")]
+    pub scope: String,
+    #[serde(default)]
+    pub reporting: StoredWorkItemReporting,
     pub repositories: Vec<Value>,
     pub links: Vec<Value>,
     pub context_path: String,
@@ -188,6 +236,8 @@ pub struct WorkItemUpdatePatch {
     pub objective: Option<String>,
     pub desired_outcomes: Option<Vec<String>>,
     pub classification: Option<WorkItemClassificationInput>,
+    pub scope: Option<String>,
+    pub reporting: Option<WorkItemReportingInput>,
     pub repositories: Option<Vec<Value>>,
     pub links: Option<Vec<Value>>,
     pub completed_at: Option<String>,
@@ -250,6 +300,21 @@ pub struct WorkItemWriteResult {
     pub commit: WriteCommit,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TrashedWorkItem {
+    pub work_item_id: String,
+    pub title: String,
+    pub trashed_at: String,
+    pub paths: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct WorkItemTrashResult {
+    pub work_item_id: String,
+    pub trash_path: String,
+    pub moved_paths: Vec<String>,
+}
+
 fn context_path(work_item_id: &str) -> String {
     format!("work-items/{work_item_id}/context.md")
 }
@@ -268,6 +333,20 @@ fn normalize_classification(input: WorkItemClassificationInput) -> StoredWorkIte
         initiative_id: input.initiative_id,
         work_types: input.work_types.unwrap_or_default(),
         tags: input.tags.unwrap_or_default(),
+    }
+}
+
+fn normalize_reporting(input: WorkItemReportingInput) -> StoredWorkItemReporting {
+    let mode = input.mode.unwrap_or_else(default_reporting_mode);
+    StoredWorkItemReporting {
+        exclusion_reason: if mode == "primary" {
+            None
+        } else {
+            input
+                .exclusion_reason
+                .filter(|value| !value.trim().is_empty())
+        },
+        mode,
     }
 }
 
@@ -321,6 +400,8 @@ pub fn normalize_work_item(
         objective: input.objective,
         desired_outcomes: input.desired_outcomes.unwrap_or_default(),
         classification: normalize_classification(input.classification.unwrap_or_default()),
+        scope: input.scope.unwrap_or_else(default_work_item_scope),
+        reporting: normalize_reporting(input.reporting.unwrap_or_default()),
         repositories: input.repositories.unwrap_or_default(),
         links: input.links.unwrap_or_default(),
         context_path: canonical_context_path,
@@ -858,6 +939,12 @@ fn apply_update(
     if let Some(value) = patch.classification {
         work_item.classification = normalize_classification(value);
     }
+    if let Some(value) = patch.scope {
+        work_item.scope = value;
+    }
+    if let Some(value) = patch.reporting {
+        work_item.reporting = normalize_reporting(value);
+    }
     if let Some(value) = patch.repositories {
         work_item.repositories = value;
     }
@@ -933,6 +1020,241 @@ pub fn update_work_item(
     })
 }
 
+fn trash_directory(work_item_id: &str) -> PathBuf {
+    PathBuf::from(".work-harvest/trash").join(work_item_id)
+}
+
+fn trash_io(operation: &'static str, path: &Path, source: std::io::Error) -> WorkItemWriteError {
+    WorkItemWriteError::TrashIo {
+        operation,
+        path: path.to_string_lossy().into_owned(),
+        source,
+    }
+}
+
+fn collect_work_item_paths(
+    root: &Path,
+    work_item_id: &str,
+) -> Result<Vec<String>, WorkItemWriteError> {
+    let mut paths = Vec::new();
+    let work_item_directory = root.join("work-items").join(work_item_id);
+    for entry in WalkDir::new(&work_item_directory) {
+        let entry = entry.map_err(|error| {
+            WorkItemWriteError::Inconsistent(format!("could not scan work item for trash: {error}"))
+        })?;
+        if entry.file_type().is_file() {
+            paths.push(
+                entry
+                    .path()
+                    .strip_prefix(root)
+                    .map_err(|_| {
+                        WorkItemWriteError::Inconsistent("trash path escaped data root".to_string())
+                    })?
+                    .to_string_lossy()
+                    .replace(std::path::MAIN_SEPARATOR, "/"),
+            );
+        }
+    }
+
+    let records = root.join("records");
+    if records.exists() {
+        for entry in WalkDir::new(&records) {
+            let entry = entry.map_err(|error| {
+                WorkItemWriteError::Inconsistent(format!(
+                    "could not scan checkpoints for trash: {error}"
+                ))
+            })?;
+            let path = entry.path();
+            if !entry.file_type().is_file()
+                || path.extension().and_then(|value| value.to_str()) != Some("json")
+            {
+                continue;
+            }
+            let value: Value = serde_json::from_slice(
+                &fs::read(path).map_err(|source| trash_io("read", path, source))?,
+            )
+            .map_err(|source| WorkItemWriteError::Parse {
+                path: path.to_string_lossy().into_owned(),
+                source,
+            })?;
+            if value.get("work_item_id").and_then(Value::as_str) != Some(work_item_id) {
+                continue;
+            }
+            for related in [path.to_path_buf(), path.with_extension("md")] {
+                if related.exists() {
+                    paths.push(
+                        related
+                            .strip_prefix(root)
+                            .map_err(|_| {
+                                WorkItemWriteError::Inconsistent(
+                                    "trash path escaped data root".to_string(),
+                                )
+                            })?
+                            .to_string_lossy()
+                            .replace(std::path::MAIN_SEPARATOR, "/"),
+                    );
+                }
+            }
+        }
+    }
+    paths.sort();
+    paths.dedup();
+    Ok(paths)
+}
+
+fn move_paths_with_rollback(
+    root: &Path,
+    trash: &Path,
+    paths: &[String],
+    restoring: bool,
+) -> Result<(), WorkItemWriteError> {
+    let mut moved = Vec::<String>::new();
+    for relative in paths {
+        let original = root.join(relative);
+        let trashed = trash.join("files").join(relative);
+        let (source, destination) = if restoring {
+            (&trashed, &original)
+        } else {
+            (&original, &trashed)
+        };
+        if destination.exists() {
+            return Err(WorkItemWriteError::TrashConflict(
+                destination.to_string_lossy().into_owned(),
+            ));
+        }
+        if let Some(parent) = destination.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|source| trash_io("create directory for", parent, source))?;
+        }
+        if let Err(source_error) = fs::rename(source, destination) {
+            for completed in moved.iter().rev() {
+                let original = root.join(completed);
+                let trashed = trash.join("files").join(completed);
+                let (rollback_source, rollback_destination) = if restoring {
+                    (&original, &trashed)
+                } else {
+                    (&trashed, &original)
+                };
+                if let Some(parent) = rollback_destination.parent() {
+                    let _ = fs::create_dir_all(parent);
+                }
+                let _ = fs::rename(rollback_source, rollback_destination);
+            }
+            return Err(trash_io("move", source, source_error));
+        }
+        moved.push(relative.clone());
+    }
+    Ok(())
+}
+
+pub fn trash_work_item(
+    root: impl AsRef<Path>,
+    work_item_id: &str,
+    trashed_at: &str,
+) -> Result<WorkItemTrashResult, WorkItemWriteError> {
+    if !crate::is_identifier(work_item_id) {
+        return Err(WorkItemWriteError::WorkItemNotFound(
+            work_item_id.to_string(),
+        ));
+    }
+    let writer = DataRootWriter::acquire(root)?;
+    let snapshot = read_snapshot_from_root(writer.root(), work_item_id)?;
+    let relative_trash = trash_directory(work_item_id);
+    let trash = writer.root().join(&relative_trash);
+    if trash.exists() {
+        return Err(WorkItemWriteError::TrashConflict(work_item_id.to_string()));
+    }
+    let paths = collect_work_item_paths(writer.root(), work_item_id)?;
+    let manifest = TrashedWorkItem {
+        work_item_id: work_item_id.to_string(),
+        title: snapshot.work_item.title,
+        trashed_at: trashed_at.to_string(),
+        paths: paths.clone(),
+    };
+    fs::create_dir_all(&trash).map_err(|source| trash_io("create", &trash, source))?;
+    let manifest_path = trash.join("manifest.json");
+    fs::write(&manifest_path, json_bytes("trash manifest", &manifest)?)
+        .map_err(|source| trash_io("write", &manifest_path, source))?;
+    if let Err(error) = move_paths_with_rollback(writer.root(), &trash, &paths, false) {
+        let _ = fs::remove_dir_all(&trash);
+        return Err(error);
+    }
+    let _ = fs::remove_dir(writer.root().join("work-items").join(work_item_id));
+    Ok(WorkItemTrashResult {
+        work_item_id: work_item_id.to_string(),
+        trash_path: relative_trash
+            .to_string_lossy()
+            .replace(std::path::MAIN_SEPARATOR, "/"),
+        moved_paths: paths,
+    })
+}
+
+pub fn list_trashed_work_items(
+    root: impl AsRef<Path>,
+) -> Result<Vec<TrashedWorkItem>, WorkItemWriteError> {
+    let writer = DataRootWriter::acquire(root)?;
+    let trash_root = writer.root().join(".work-harvest/trash");
+    if !trash_root.exists() {
+        return Ok(Vec::new());
+    }
+    let mut items = Vec::new();
+    for entry in
+        fs::read_dir(&trash_root).map_err(|source| trash_io("list", &trash_root, source))?
+    {
+        let entry = entry.map_err(|source| trash_io("read", &trash_root, source))?;
+        let manifest_path = entry.path().join("manifest.json");
+        if !manifest_path.exists() {
+            continue;
+        }
+        items.push(
+            serde_json::from_slice(
+                &fs::read(&manifest_path)
+                    .map_err(|source| trash_io("read", &manifest_path, source))?,
+            )
+            .map_err(|source| WorkItemWriteError::Parse {
+                path: manifest_path.to_string_lossy().into_owned(),
+                source,
+            })?,
+        );
+    }
+    items.sort_by(|left: &TrashedWorkItem, right: &TrashedWorkItem| {
+        right.trashed_at.cmp(&left.trashed_at)
+    });
+    Ok(items)
+}
+
+pub fn restore_work_item(
+    root: impl AsRef<Path>,
+    work_item_id: &str,
+) -> Result<WorkItemTrashResult, WorkItemWriteError> {
+    if !crate::is_identifier(work_item_id) {
+        return Err(WorkItemWriteError::TrashNotFound(work_item_id.to_string()));
+    }
+    let writer = DataRootWriter::acquire(root)?;
+    let relative_trash = trash_directory(work_item_id);
+    let trash = writer.root().join(&relative_trash);
+    let manifest_path = trash.join("manifest.json");
+    if !manifest_path.exists() {
+        return Err(WorkItemWriteError::TrashNotFound(work_item_id.to_string()));
+    }
+    let manifest: TrashedWorkItem = serde_json::from_slice(
+        &fs::read(&manifest_path).map_err(|source| trash_io("read", &manifest_path, source))?,
+    )
+    .map_err(|source| WorkItemWriteError::Parse {
+        path: manifest_path.to_string_lossy().into_owned(),
+        source,
+    })?;
+    move_paths_with_rollback(writer.root(), &trash, &manifest.paths, true)?;
+    fs::remove_dir_all(&trash).map_err(|source| trash_io("remove", &trash, source))?;
+    Ok(WorkItemTrashResult {
+        work_item_id: work_item_id.to_string(),
+        trash_path: relative_trash
+            .to_string_lossy()
+            .replace(std::path::MAIN_SEPARATOR, "/"),
+        moved_paths: manifest.paths,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -956,6 +1278,11 @@ mod tests {
                 initiative_id: Some("authentication".to_string()),
                 work_types: Some(vec!["implementation".to_string(), "testing".to_string()]),
                 tags: Some(vec!["auth".to_string()]),
+            }),
+            scope: Some("company".to_string()),
+            reporting: Some(WorkItemReportingInput {
+                mode: Some("primary".to_string()),
+                exclusion_reason: None,
             }),
             repositories: Some(vec![json!({
                 "name": "jajak-front",
@@ -1264,5 +1591,39 @@ process.stdout.write(JSON.stringify({
         assert!(matches!(error, WorkItemWriteError::Validation { .. }));
         let after = read_work_item_for_edit(directory.path(), "AUTH-142").unwrap();
         assert_eq!(before, after);
+    }
+
+    #[test]
+    fn trashes_and_restores_work_item_with_checkpoints() {
+        let directory = tempdir().unwrap();
+        create_work_item(directory.path(), input("AUTH-142"), CREATED_AT).unwrap();
+        let record = directory
+            .path()
+            .join("records/2026/07/14/CP-20260714-trash-test.json");
+        fs::create_dir_all(record.parent().unwrap()).unwrap();
+        fs::write(&record, r#"{"work_item_id":"AUTH-142"}"#).unwrap();
+        fs::write(record.with_extension("md"), "# checkpoint\n").unwrap();
+
+        let trashed = trash_work_item(directory.path(), "AUTH-142", UPDATED_AT).unwrap();
+        assert_eq!(trashed.work_item_id, "AUTH-142");
+        assert!(
+            !directory
+                .path()
+                .join("work-items/AUTH-142/work-item.json")
+                .exists()
+        );
+        assert!(!record.exists());
+        let listed = list_trashed_work_items(directory.path()).unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].work_item_id, "AUTH-142");
+
+        restore_work_item(directory.path(), "AUTH-142").unwrap();
+        assert!(read_work_item_for_edit(directory.path(), "AUTH-142").is_ok());
+        assert!(record.exists());
+        assert!(
+            list_trashed_work_items(directory.path())
+                .unwrap()
+                .is_empty()
+        );
     }
 }

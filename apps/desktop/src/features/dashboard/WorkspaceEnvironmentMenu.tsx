@@ -1,7 +1,11 @@
 import { Popover } from "@base-ui/react/popover";
 import { Bell, ChevronRight, FolderOpen, RefreshCw, Settings2, TimerReset } from "lucide-react";
 import { useEffect, useState } from "react";
-import { getBuildInfo, type BuildInfo, type DataRootSnapshot } from "../../desktop";
+import {
+  getBuildInfo,
+  type BuildInfo,
+  type DataRootSnapshot,
+} from "../../desktop";
 import type { NotificationState } from "../../useSnapshotNotifications";
 import { Button } from "../../ui/Button";
 

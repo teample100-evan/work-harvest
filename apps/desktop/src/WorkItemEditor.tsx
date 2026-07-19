@@ -17,6 +17,8 @@ import {
   type DesktopWriteError,
   type WorkItemCreateInput,
   type WorkItemEditSnapshot,
+  type WorkItemReportingMode,
+  type WorkItemScope,
   type WorkItemStatus,
   type WorkItemUpdatePatch,
   type WorkItemWritePreview,
@@ -57,6 +59,9 @@ interface EditorDraft {
   initiativeId: string;
   workTypes: string;
   tags: string;
+  scope: WorkItemScope;
+  reportingMode: WorkItemReportingMode;
+  exclusionReason: string;
   currentState: string;
   decisions: string;
   verificationCompleted: string;
@@ -81,6 +86,18 @@ const statusOptions: Array<{ value: WorkItemStatus; label: string }> = [
   { value: "blocked", label: "막힘" },
   { value: "completed", label: "완료" },
   { value: "cancelled", label: "취소" },
+];
+
+const scopeOptions: Array<{ value: WorkItemScope; label: string }> = [
+  { value: "unclassified", label: "선택 필요" },
+  { value: "company", label: "회사 업무" },
+  { value: "personal", label: "개인 업무" },
+];
+
+const reportingModeOptions: Array<{ value: WorkItemReportingMode; label: string }> = [
+  { value: "primary", label: "주요 업무 · 보고서에 한 줄로 포함" },
+  { value: "supporting", label: "지원 활동 · 기록만 유지" },
+  { value: "excluded", label: "보고 제외" },
 ];
 
 const createScenarioOptions: CreateScenarioOption[] = [
@@ -160,6 +177,9 @@ function emptyDraft(): EditorDraft {
     initiativeId: "",
     workTypes: "",
     tags: "",
+    scope: "unclassified",
+    reportingMode: "primary",
+    exclusionReason: "",
     currentState: "",
     decisions: "",
     verificationCompleted: "",
@@ -221,6 +241,9 @@ function draftFromSnapshot(snapshot: WorkItemEditSnapshot): EditorDraft {
     initiativeId: snapshot.work_item.classification.initiative_id ?? "",
     workTypes: snapshot.work_item.classification.work_types.join(", "),
     tags: snapshot.work_item.classification.tags.join(", "),
+    scope: snapshot.work_item.scope,
+    reportingMode: snapshot.work_item.reporting.mode,
+    exclusionReason: snapshot.work_item.reporting.exclusion_reason ?? "",
     currentState: snapshot.context.current_state,
     decisions: formatLines(snapshot.context.decisions),
     verificationCompleted: formatLines(snapshot.context.verification.completed),
@@ -244,6 +267,11 @@ function createInput(draft: EditorDraft): WorkItemCreateInput {
       work_types: splitCommaList(draft.workTypes),
       tags: splitCommaList(draft.tags),
     },
+    scope: draft.scope,
+    reporting: {
+      mode: draft.reportingMode,
+      exclusion_reason: draft.exclusionReason.trim() || null,
+    },
     context: {
       ...(currentState ? { current_state: currentState } : {}),
       decisions: splitLines(draft.decisions),
@@ -265,6 +293,7 @@ function updatePatch(draft: EditorDraft, snapshot: WorkItemEditSnapshot): WorkIt
   const initiativeId = draft.initiativeId.trim() || null;
   const workTypes = splitCommaList(draft.workTypes);
   const tags = splitCommaList(draft.tags);
+  const exclusionReason = draft.exclusionReason.trim() || null;
 
   if (title !== snapshot.work_item.title) patch.title = title;
   if (draft.status !== snapshot.work_item.status) patch.status = draft.status;
@@ -281,6 +310,16 @@ function updatePatch(draft: EditorDraft, snapshot: WorkItemEditSnapshot): WorkIt
       initiative_id: initiativeId,
       work_types: workTypes,
       tags,
+    };
+  }
+  if (draft.scope !== snapshot.work_item.scope) patch.scope = draft.scope;
+  if (
+    draft.reportingMode !== snapshot.work_item.reporting.mode ||
+    exclusionReason !== snapshot.work_item.reporting.exclusion_reason
+  ) {
+    patch.reporting = {
+      mode: draft.reportingMode,
+      exclusion_reason: exclusionReason,
     };
   }
 
@@ -426,6 +465,10 @@ export function WorkItemEditor({
     const nextValidationMessage = validateControls(event.currentTarget);
     setValidationMessage(nextValidationMessage);
     if (nextValidationMessage) return;
+    if (mode === "create" && draft.scope === "unclassified") {
+      setValidationMessage("회사 업무인지 개인 업무인지 선택해 주세요.");
+      return;
+    }
 
     const now = new Date().toISOString();
     try {
@@ -643,6 +686,41 @@ export function WorkItemEditor({
                         />
                         <small>시작 단계에 따라 자동 설정됩니다.</small>
                       </div>
+                      <div className="editor-field">
+                        <span>업무 범위</span>
+                        <SelectMenu
+                          ariaLabel="업무 범위"
+                          className="editor-select-menu"
+                          onChange={(scope) => setDraft({ ...draft, scope })}
+                          options={scopeOptions}
+                          value={draft.scope}
+                        />
+                        <small>회사 보고와 개인 기록을 분리하는 기준입니다.</small>
+                      </div>
+                      <div className="editor-field">
+                        <span>주간 보고 처리</span>
+                        <SelectMenu
+                          ariaLabel="주간 보고 처리"
+                          className="editor-select-menu"
+                          onChange={(reportingMode) => setDraft({ ...draft, reportingMode })}
+                          options={reportingModeOptions}
+                          value={draft.reportingMode}
+                        />
+                        <small>지원 활동과 제외 항목은 기본 보고서의 독립 업무로 나오지 않습니다.</small>
+                      </div>
+                      {draft.reportingMode !== "primary" ? (
+                        <label className="editor-field full">
+                          <span>보고에서 분리하는 이유 · 선택</span>
+                          <input
+                            maxLength={240}
+                            value={draft.exclusionReason}
+                            placeholder="예: 기능 업무에 포함되는 브랜치 동기화 작업"
+                            onChange={(event) =>
+                              setDraft({ ...draft, exclusionReason: event.target.value })
+                            }
+                          />
+                        </label>
+                      ) : null}
                       <label className="editor-field full">
                         <span>{activeScenarioCopy.objectiveLabel}</span>
                         <textarea
@@ -891,6 +969,39 @@ export function WorkItemEditor({
                           value={draft.status}
                         />
                       </div>
+                      <div className="editor-field">
+                        <span>업무 범위</span>
+                        <SelectMenu
+                          ariaLabel="업무 범위"
+                          className="editor-select-menu"
+                          onChange={(scope) => setDraft({ ...draft, scope })}
+                          options={scopeOptions}
+                          value={draft.scope}
+                        />
+                      </div>
+                      <div className="editor-field">
+                        <span>주간 보고 처리</span>
+                        <SelectMenu
+                          ariaLabel="주간 보고 처리"
+                          className="editor-select-menu"
+                          onChange={(reportingMode) => setDraft({ ...draft, reportingMode })}
+                          options={reportingModeOptions}
+                          value={draft.reportingMode}
+                        />
+                      </div>
+                      {draft.reportingMode !== "primary" ? (
+                        <label className="editor-field">
+                          <span>보고에서 분리하는 이유 · 선택</span>
+                          <input
+                            maxLength={240}
+                            value={draft.exclusionReason}
+                            placeholder="예: 기능 업무를 지원한 운영 작업"
+                            onChange={(event) =>
+                              setDraft({ ...draft, exclusionReason: event.target.value })
+                            }
+                          />
+                        </label>
+                      ) : null}
                       <label className="editor-field">
                         <span>Initiative ID</span>
                         <input

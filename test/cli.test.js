@@ -463,3 +463,84 @@ test("retrospective non-code work preserves capture time and user-supplied work 
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("QA-pending delivery is recorded as a milestone with report-quality context", () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "work-harvest-test-"));
+  try {
+    const workItem = createPayload("JAK-295");
+    workItem.classification.work_types = ["bugfix"];
+    workItem.problem = {
+      statement: "조건을 충족한 것으로 표시되지만 게시가 거절된다.",
+      expected_behavior: "본문이 3문단 이하이면 게시할 수 있어야 한다.",
+      actual_behavior: "화면은 3문단으로 세지만 서버에는 빈 문단을 포함한 5개 p 태그가 전달된다.",
+      affected_surfaces: ["선생님 게시글 작성·수정"],
+      source_refs: ["linear:JAK-295"],
+    };
+    workItem.external_refs = [{
+      provider: "linear",
+      external_id: "JAK-295",
+      url: "https://linear.app/example/issue/JAK-295",
+      role: "source",
+    }];
+    workItem.completion = {
+      target_gate: "qa",
+      current_gate: "review",
+      remaining_gates: ["qa"],
+    };
+    const created = run(
+      ["work-item", "create", "--input", "-", "--root", root, "--json"],
+      workItem,
+    );
+    assert.equal(created.status, 0, created.stderr);
+    assert.equal(JSON.parse(created.stdout).work_item.schema_version, "1.1");
+
+    const milestone = checkpointPayload();
+    milestone.id = "CP-20260720-JAK295";
+    milestone.work_item_id = "JAK-295";
+    milestone.kind = "milestone";
+    milestone.captured_at = "2026-07-20T11:47:00+09:00";
+    milestone.external_states = [{
+      provider: "linear",
+      reference: "JAK-295",
+      state: "QA Pending",
+      observed_at: "2026-07-20T11:47:00+09:00",
+      url: "https://linear.app/example/issue/JAK-295",
+    }];
+    milestone.completion = {
+      reached_gate: "review",
+      remaining_gates: ["qa"],
+      evidence_refs: ["pull-request:3"],
+    };
+    milestone.verifications[0].method = "command";
+    milestone.verifications[0].observed_at = "2026-07-20T11:40:00+09:00";
+    milestone.outcomes = [
+      {
+        description: "빈 문단 때문에 게시가 거절되는 문제를 해결했다.",
+        impact: "화면의 문단 조건과 서버 검증 결과가 일치한다.",
+        category: "user_impact",
+        reporting: "primary",
+        evidence_refs: ["linear:JAK-295"],
+      },
+      {
+        description: "수정 PR을 병합했다.",
+        impact: null,
+        category: "delivery",
+        reporting: "supporting",
+        evidence_refs: ["pull-request:3"],
+      },
+    ];
+    const captured = run(
+      ["checkpoint", "capture", "--input", "-", "--root", root, "--json"],
+      milestone,
+    );
+    assert.equal(captured.status, 0, captured.stderr);
+    const result = JSON.parse(captured.stdout);
+    assert.equal(result.checkpoint.kind, "milestone");
+    assert.equal(result.checkpoint.status_after, "in_progress");
+    assert.equal(result.work_item.status, "in_progress");
+    assert.equal(result.checkpoint.external_states[0].state, "QA Pending");
+    assert.deepEqual(result.checkpoint.completion.remaining_gates, ["qa"]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

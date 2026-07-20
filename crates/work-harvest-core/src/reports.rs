@@ -930,6 +930,7 @@ fn weekly_work_item_sections(
                 .iter()
                 .rev()
                 .flat_map(|entry| entry.checkpoint.outcomes.iter().rev())
+                .filter(|outcome| outcome.reporting.as_deref().unwrap_or("primary") == "primary")
             {
                 let rendered = outcome.impact.as_deref().map_or_else(
                     || outcome.description.clone(),

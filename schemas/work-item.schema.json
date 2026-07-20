@@ -23,7 +23,7 @@
   ],
   "properties": {
     "schema_version": {
-      "const": "1.0"
+      "enum": ["1.0", "1.1"]
     },
     "id": {
       "$ref": "./common.schema.json#/$defs/identifier"
@@ -42,6 +42,27 @@
     },
     "objective": {
       "$ref": "./common.schema.json#/$defs/nonEmptyString"
+    },
+    "problem": {
+      "description": "보고와 인수인계에 필요한 문제 배경. 외부 원문 전체를 복제하지 않는다.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["statement", "expected_behavior", "actual_behavior", "affected_surfaces", "source_refs"],
+      "properties": {
+        "statement": { "$ref": "./common.schema.json#/$defs/nonEmptyString" },
+        "expected_behavior": { "type": ["string", "null"] },
+        "actual_behavior": { "type": ["string", "null"] },
+        "affected_surfaces": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "./common.schema.json#/$defs/nonEmptyString" }
+        },
+        "source_refs": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "./common.schema.json#/$defs/nonEmptyString" }
+        }
+      }
     },
     "desired_outcomes": {
       "type": "array",
@@ -134,6 +155,25 @@
       "type": "array",
       "items": {
         "$ref": "./common.schema.json#/$defs/externalLink"
+      }
+    },
+    "external_refs": {
+      "type": "array",
+      "items": { "$ref": "./common.schema.json#/$defs/externalReference" }
+    },
+    "completion": {
+      "description": "업무 전체가 목표로 하는 완료 게이트와 현재 도달 상태",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target_gate", "current_gate", "remaining_gates"],
+      "properties": {
+        "target_gate": { "type": "string", "enum": ["development", "review", "qa", "release", "operational"] },
+        "current_gate": { "type": ["string", "null"] },
+        "remaining_gates": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "enum": ["development", "review", "qa", "release", "operational"] }
+        }
       }
     },
     "context_path": {

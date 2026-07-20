@@ -15,6 +15,14 @@ id: WH-20260713-auth-tests
 project_id: jajak-front
 title: 인증 갱신 테스트
 objective: 토큰 갱신과 재시도 동작을 자동화된 테스트로 검증한다.
+problem:
+  statement: 토큰 만료 뒤 원 요청이 안전하게 재시도되는지 보장할 근거가 부족하다.
+  expected_behavior: 갱신 성공 뒤 원 요청을 한 번만 재시도한다.
+  actual_behavior: 자동화된 회귀 검증이 없다.
+  affected_surfaces:
+    - 인증이 필요한 API 요청
+  source_refs:
+    - linear:AUTH-142
 desired_outcomes:
   - 동시 인증 실패 상황이 테스트로 검증된다.
 scope: company
@@ -33,6 +41,18 @@ repositories:
     remote_url: null
     default_branch: main
 links: []
+external_refs:
+  - provider: linear
+    external_id: AUTH-142
+    url: https://linear.app/example/issue/AUTH-142
+    role: source
+completion:
+  target_gate: qa
+  current_gate: null
+  remaining_gates:
+    - development
+    - review
+    - qa
 context:
   current_state: 인증 갱신 테스트를 시작하기 전이다.
   decisions: []
@@ -92,11 +112,15 @@ verifications:
     description: 인증 갱신 기본 성공 경로 테스트
     status: passed
     command: pnpm test auth
+    method: command
+    observed_at: 2026-07-13T18:10:00+09:00
     evidence_refs:
       - tests/auth/refresh-token.test.ts
 outcomes:
   - description: 갱신 후 원 요청이 정상적으로 재시도되는 동작을 검증했다.
-    impact: null
+    impact: 인증 만료 시 사용자의 요청이 불필요하게 실패하는 회귀를 자동으로 탐지할 수 있다.
+    category: quality
+    reporting: primary
     evidence_refs:
       - tests/auth/refresh-token.test.ts
 blockers: []
@@ -151,15 +175,24 @@ verifications:
     description: 인증 테스트 전체 실행
     status: passed
     command: pnpm test auth
+    method: command
+    observed_at: 2026-07-13T18:10:00+09:00
     evidence_refs:
       - tests/auth/refresh-token.test.ts
 outcomes:
   - description: 계획한 인증 갱신 시나리오가 자동화된 테스트로 검증됐다.
-    impact: null
+    impact: 인증 갱신 회귀를 배포 전에 탐지할 수 있다.
+    category: quality
+    reporting: primary
     evidence_refs:
       - tests/auth/refresh-token.test.ts
 blockers: []
 next_steps: []
+completion:
+  reached_gate: qa
+  remaining_gates: []
+  evidence_refs:
+    - tests/auth/refresh-token.test.ts
 context_update:
   current_state: 인증 갱신 테스트를 완료했다.
   verification:
@@ -200,10 +233,14 @@ verifications:
     description: 배포 가이드 내용 검토
     status: not_run
     command: null
+    method: external
+    observed_at: null
     evidence_refs: []
 outcomes:
   - description: 배포 가이드 초안이 작성됐다고 사용자가 보고했다.
     impact: 사용자 제공 설명 기준이며 Codex가 문서를 직접 확인하지 않았다.
+    category: product_change
+    reporting: primary
     evidence_refs: []
 next_steps:
   - 배포 가이드 문서 링크를 연결하고 내용을 검토한다.

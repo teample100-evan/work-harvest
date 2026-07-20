@@ -28,6 +28,7 @@ Map the request to one checkpoint kind:
 | Intent | Kind | Status |
 | --- | --- | --- |
 | Today/current stage/since last checkpoint | `progress` | Usually `in_progress` |
+| A named gate reached while later gates remain | `milestone` | `in_progress` or `blocked` |
 | Finish the work item | `final` | `completed` |
 | Reconstruct missed prior work | `backfill` | Reflect actual state |
 | Correct an immutable prior checkpoint | `correction` | Reflect actual state |
@@ -81,6 +82,8 @@ Match candidates using project, objective, intended outcome, initiative, reposit
 - Set `reporting.mode` to `primary`, `supporting`, or `excluded`. Use `primary` only for a standalone reportable outcome.
 
 Read [references/payloads.md](references/payloads.md) before creating a work item or checkpoint payload.
+When an external issue, completion boundary, or reportable result is involved, also read
+[references/collection-quality.md](references/collection-quality.md).
 
 ### 3. Establish the checkpoint boundary
 
@@ -107,6 +110,11 @@ Use the current conversation and safe read-only repository checks to confirm:
 - Decisions and their rationale
 - Confirmed outcomes and impact
 - Blockers, remaining risk, and next steps
+
+When a stable external issue ID exists, read that issue's canonical current state. Populate the
+compact `problem` and `external_refs` fields on the work item, then capture changing workflow state
+in checkpoint `external_states`. Do not rely on an issue key or title alone and do not copy full
+issue histories into the record.
 
 Treat code and current Git state as stronger evidence than remembered conversation context. Do not claim an unexecuted verification passed. Do not copy full transcripts, full diffs, secrets, environment variables, or sensitive command output into the record.
 
@@ -157,8 +165,16 @@ For the checkpoint delta:
   checkpoint evidence.
 - Keep resolved experiments and transient failures out unless they changed a decision, explain a
   remaining risk, or are necessary to understand the result.
+- Set `category` and `reporting` on every new outcome. Keep delivery mechanics supporting and
+  record maintenance excluded.
+- Set verification `method` and `observed_at`; a passed verification needs an actual command,
+  artifact, manual observation, or external evidence.
+- Record the reached and remaining completion gates. Use `milestone` for merged or reviewed work
+  that still awaits QA, release, or operational confirmation.
 
-For `final`, include at least one confirmed outcome. If completion or its evidence is uncertain, use `progress` and state what remains.
+For `final`, include at least one confirmed primary outcome and require the target completion gate
+to be reached with no remaining gates. If a meaningful gate was reached but later gates remain,
+use `milestone`; if completion or its evidence is uncertain, use `progress`.
 
 ### 6. Capture and validate
 

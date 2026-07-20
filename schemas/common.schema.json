@@ -188,6 +188,25 @@
           ]
         }
       }
+    },
+    "externalReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "external_id", "url", "role"],
+      "properties": {
+        "provider": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "external_id": { "$ref": "#/$defs/nonEmptyString" },
+        "url": {
+          "oneOf": [
+            { "type": "string", "format": "uri" },
+            { "type": "null" }
+          ]
+        },
+        "role": {
+          "type": "string",
+          "enum": ["source", "delivery", "evidence", "related"]
+        }
+      }
     }
   }
 }

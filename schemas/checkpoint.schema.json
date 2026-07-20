@@ -30,7 +30,7 @@
   ],
   "properties": {
     "schema_version": {
-      "const": "1.0"
+      "enum": ["1.0", "1.1"]
     },
     "id": {
       "$ref": "./common.schema.json#/$defs/identifier"
@@ -43,7 +43,7 @@
     },
     "kind": {
       "type": "string",
-      "enum": ["progress", "final", "correction", "backfill"]
+      "enum": ["progress", "milestone", "final", "correction", "backfill"]
     },
     "source": {
       "$ref": "./common.schema.json#/$defs/source"
@@ -113,6 +113,16 @@
           "command": {
             "type": ["string", "null"]
           },
+          "method": {
+            "type": "string",
+            "enum": ["command", "artifact", "manual", "external"]
+          },
+          "observed_at": {
+            "oneOf": [
+              { "$ref": "./common.schema.json#/$defs/timestamp" },
+              { "type": "null" }
+            ]
+          },
           "evidence_refs": {
             "type": "array",
             "items": {
@@ -134,6 +144,14 @@
           },
           "impact": {
             "type": ["string", "null"]
+          },
+          "category": {
+            "type": "string",
+            "enum": ["user_impact", "product_change", "quality", "delivery", "operation", "record_maintenance"]
+          },
+          "reporting": {
+            "type": "string",
+            "enum": ["primary", "supporting", "excluded"]
           },
           "evidence_refs": {
             "type": "array",
@@ -227,6 +245,43 @@
         },
         "dirty": {
           "type": ["boolean", "null"]
+        }
+      }
+    },
+    "external_states": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["provider", "reference", "state", "observed_at", "url"],
+        "properties": {
+          "provider": { "type": "string", "minLength": 1, "maxLength": 64 },
+          "reference": { "$ref": "./common.schema.json#/$defs/nonEmptyString" },
+          "state": { "$ref": "./common.schema.json#/$defs/nonEmptyString" },
+          "observed_at": { "$ref": "./common.schema.json#/$defs/timestamp" },
+          "url": {
+            "oneOf": [
+              { "type": "string", "format": "uri" },
+              { "type": "null" }
+            ]
+          }
+        }
+      }
+    },
+    "completion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reached_gate", "remaining_gates", "evidence_refs"],
+      "properties": {
+        "reached_gate": { "$ref": "./common.schema.json#/$defs/nonEmptyString" },
+        "remaining_gates": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "enum": ["development", "review", "qa", "release", "operational"] }
+        },
+        "evidence_refs": {
+          "type": "array",
+          "items": { "$ref": "./common.schema.json#/$defs/nonEmptyString" }
         }
       }
     },

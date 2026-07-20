@@ -272,6 +272,92 @@ fn issue(root: &Path, path: &Path, code: &str, message: impl Into<String>) -> Da
     }
 }
 
+fn warning(root: &Path, path: &Path, code: &str, message: impl Into<String>) -> DataIssue {
+    DataIssue {
+        severity: IssueSeverity::Warning,
+        code: code.to_string(),
+        path: relative_path(root, path),
+        message: message.into(),
+    }
+}
+
+fn inspect_checkpoint_quality(
+    root: &Path,
+    path: &Path,
+    value: &Value,
+    issues: &mut Vec<DataIssue>,
+) {
+    if value.get("schema_version").and_then(Value::as_str) != Some("1.1") {
+        return;
+    }
+    for verification in value
+        .get("verifications")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        let passed = verification.get("status").and_then(Value::as_str) == Some("passed");
+        let has_command = verification
+            .get("command")
+            .and_then(Value::as_str)
+            .is_some_and(|command| !command.trim().is_empty());
+        let has_evidence = verification
+            .get("evidence_refs")
+            .and_then(Value::as_array)
+            .is_some_and(|refs| !refs.is_empty());
+        if passed && !has_command && !has_evidence {
+            issues.push(warning(
+                root,
+                path,
+                "unproven_passed_verification",
+                "통과한 검증에는 실행 명령이나 근거 참조가 필요합니다.",
+            ));
+        }
+    }
+    for outcome in value
+        .get("outcomes")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        let category = outcome.get("category").and_then(Value::as_str);
+        let reporting = outcome
+            .get("reporting")
+            .and_then(Value::as_str)
+            .unwrap_or("primary");
+        if matches!(category, Some("delivery" | "record_maintenance")) && reporting == "primary" {
+            issues.push(warning(
+                root,
+                path,
+                "mechanics_reported_as_primary",
+                "전달 절차나 기록 관리 결과는 supporting 또는 excluded로 분류하는 것이 좋습니다.",
+            ));
+        }
+        if reporting == "primary" && outcome.get("impact").is_none_or(Value::is_null) {
+            issues.push(warning(
+                root,
+                path,
+                "primary_outcome_without_impact",
+                "주요 성과에는 보고 가능한 영향을 기록하는 것이 좋습니다.",
+            ));
+        }
+    }
+    let remaining = value
+        .get("completion")
+        .and_then(|completion| completion.get("remaining_gates"))
+        .and_then(Value::as_array);
+    if value.get("kind").and_then(Value::as_str) == Some("final")
+        && remaining.is_some_and(|gates| !gates.is_empty())
+    {
+        issues.push(warning(
+            root,
+            path,
+            "final_with_remaining_gates",
+            "남은 완료 게이트가 있는 체크포인트는 final 대신 milestone 또는 progress여야 합니다.",
+        ));
+    }
+}
+
 fn validate_document(
     root: &Path,
     path: &Path,
@@ -1116,6 +1202,7 @@ impl DataRootIndex {
                 value,
                 &mut issues,
             );
+            inspect_checkpoint_quality(&self.root, path, value, &mut issues);
             let checkpoint_id = required_string(&self.root, path, value, "id", &mut issues);
             let work_item_id =
                 required_string(&self.root, path, value, "work_item_id", &mut issues);

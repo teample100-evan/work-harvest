@@ -43,12 +43,13 @@ export function normalizeWorkItem(input, now = new Date().toISOString()) {
   }
 
   return {
-    schema_version: "1.0",
+    schema_version: "1.1",
     id: String(input.id),
     project_id: String(input.project_id),
     title: String(input.title),
     status: input.status ?? "planned",
     objective: String(input.objective),
+    ...(input.problem ? { problem: input.problem } : {}),
     desired_outcomes: stringList(input.desired_outcomes),
     classification: {
       initiative_id: input.classification?.initiative_id ?? null,
@@ -65,6 +66,8 @@ export function normalizeWorkItem(input, now = new Date().toISOString()) {
     },
     repositories: input.repositories ?? [],
     links: input.links ?? [],
+    external_refs: input.external_refs ?? [],
+    ...(input.completion ? { completion: input.completion } : {}),
     context_path: contextPath,
     created_at: input.created_at ?? now,
     updated_at: input.updated_at ?? now,
@@ -76,7 +79,7 @@ export function normalizeWorkItem(input, now = new Date().toISOString()) {
 export function normalizeContextState(input, workItem) {
   const value = input ?? {};
   return {
-    schema_version: "1.0",
+    schema_version: "1.1",
     work_item_id: workItem.id,
     project_id: workItem.project_id,
     updated_at: workItem.updated_at,
@@ -85,6 +88,7 @@ export function normalizeContextState(input, workItem) {
     current_state:
       value.current_state ??
       "업무 항목을 생성했으며 구체적인 작업을 시작하기 전이다.",
+    ...(value.lifecycle ? { lifecycle: value.lifecycle } : {}),
     decisions: stringList(value.decisions),
     files: normalizeFiles(value.files),
     verification: {
@@ -126,7 +130,7 @@ function renderFileBullets(values) {
 export function renderContext(workItem, context) {
   const frontmatter = [
     "---",
-    'schema_version: "1.0"',
+    `schema_version: ${JSON.stringify(context.schema_version)}`,
     `work_item_id: ${JSON.stringify(workItem.id)}`,
     `project_id: ${JSON.stringify(workItem.project_id)}`,
     `title: ${JSON.stringify(workItem.title)}`,

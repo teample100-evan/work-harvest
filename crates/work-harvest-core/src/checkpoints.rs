@@ -104,6 +104,10 @@ pub struct CheckpointVerificationDocument {
     pub description: String,
     pub status: String,
     pub command: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub method: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub observed_at: Option<String>,
     pub evidence_refs: Vec<String>,
 }
 
@@ -111,6 +115,10 @@ pub struct CheckpointVerificationDocument {
 pub struct CheckpointOutcomeDocument {
     pub description: String,
     pub impact: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reporting: Option<String>,
     pub evidence_refs: Vec<String>,
 }
 
@@ -165,6 +173,7 @@ where
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct CheckpointContextUpdate {
     pub current_state: Option<String>,
+    pub lifecycle: Option<Value>,
     pub decisions: Option<Vec<String>>,
     pub files: Option<Vec<ContextFileInput>>,
     pub verification: Option<ContextVerificationInput>,
@@ -194,6 +203,8 @@ pub struct CheckpointInput {
     pub next_steps: Option<Vec<String>>,
     pub evidence: Option<CheckpointEvidenceInput>,
     pub git: Option<CheckpointGitDocument>,
+    pub external_states: Option<Vec<Value>>,
+    pub completion: Option<Value>,
     pub related_checkpoint_ids: Option<Vec<String>>,
     pub correction_of: Option<String>,
     pub confidentiality: Option<String>,
@@ -222,6 +233,10 @@ pub struct CheckpointDocument {
     pub evidence: CheckpointEvidenceDocument,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub git: Option<CheckpointGitDocument>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub external_states: Vec<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub completion: Option<Value>,
     pub related_checkpoint_ids: Vec<String>,
     pub correction_of: Option<String>,
     pub confidentiality: String,
@@ -318,7 +333,7 @@ pub fn normalize_checkpoint(
     let source = input.source.unwrap_or_default();
     let evidence = input.evidence.unwrap_or_default();
     let checkpoint = CheckpointDocument {
-        schema_version: "1.0".to_string(),
+        schema_version: "1.1".to_string(),
         id: input
             .id
             .unwrap_or_else(|| generated_checkpoint_id(&calendar)),
@@ -367,6 +382,8 @@ pub fn normalize_checkpoint(
             urls: evidence.urls.unwrap_or_default(),
         },
         git: input.git,
+        external_states: input.external_states.unwrap_or_default(),
+        completion: input.completion,
         related_checkpoint_ids: input.related_checkpoint_ids.unwrap_or_default(),
         correction_of: input.correction_of,
         confidentiality: input
@@ -449,6 +466,9 @@ fn merged_context(
     };
     if let Some(value) = update.current_state {
         context.current_state = value;
+    }
+    if let Some(value) = update.lifecycle {
+        context.lifecycle = Some(value);
     }
     if let Some(value) = update.decisions {
         context.decisions = value;
@@ -643,7 +663,10 @@ pub fn render_checkpoint(checkpoint: &CheckpointDocument) -> String {
 
     let frontmatter = vec![
         "---".to_string(),
-        "schema_version: \"1.0\"".to_string(),
+        format!(
+            "schema_version: {}",
+            yaml_scalar(&checkpoint.schema_version, true)
+        ),
         format!("id: {}", yaml_scalar(&checkpoint.id, false)),
         format!(
             "work_item_id: {}",
@@ -970,12 +993,15 @@ mod tests {
             title: "인증 개선".to_string(),
             status: Some("in_progress".to_string()),
             objective: "인증 갱신을 검증한다.".to_string(),
+            problem: None,
             desired_outcomes: None,
             classification: None,
             scope: Some("company".to_string()),
             reporting: None,
             repositories: None,
             links: None,
+            external_refs: None,
+            completion: None,
             context_path: None,
             created_at: Some(CREATED_AT.to_string()),
             updated_at: Some(CREATED_AT.to_string()),
@@ -1015,12 +1041,16 @@ mod tests {
                 description: "인증 테스트".to_string(),
                 status: "passed".to_string(),
                 command: Some("pnpm test auth".to_string()),
+                method: Some("command".to_string()),
+                observed_at: Some(CAPTURED_AT.to_string()),
                 evidence_refs: vec!["tests/auth.test.ts".to_string()],
             }]),
             outcomes: if kind == "final" {
                 Some(vec![CheckpointOutcomeDocument {
                     description: "테스트 스위트를 완료했다.".to_string(),
                     impact: None,
+                    category: Some("quality".to_string()),
+                    reporting: Some("primary".to_string()),
                     evidence_refs: Vec::new(),
                 }])
             } else {
@@ -1034,6 +1064,8 @@ mod tests {
                 ..CheckpointEvidenceInput::default()
             }),
             git: None,
+            external_states: None,
+            completion: None,
             related_checkpoint_ids: None,
             correction_of: None,
             confidentiality: None,

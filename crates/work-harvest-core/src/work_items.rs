@@ -149,6 +149,7 @@ pub struct WorkContextInput {
     pub last_checkpoint_id: Option<String>,
     pub last_verified_git_ref: Option<String>,
     pub current_state: Option<String>,
+    pub lifecycle: Option<Value>,
     pub decisions: Option<Vec<String>>,
     pub files: Option<Vec<ContextFileInput>>,
     pub verification: Option<ContextVerificationInput>,
@@ -166,12 +167,15 @@ pub struct WorkItemCreateInput {
     pub title: String,
     pub status: Option<String>,
     pub objective: String,
+    pub problem: Option<Value>,
     pub desired_outcomes: Option<Vec<String>>,
     pub classification: Option<WorkItemClassificationInput>,
     pub scope: Option<String>,
     pub reporting: Option<WorkItemReportingInput>,
     pub repositories: Option<Vec<Value>>,
     pub links: Option<Vec<Value>>,
+    pub external_refs: Option<Vec<Value>>,
+    pub completion: Option<Value>,
     pub context_path: Option<String>,
     pub created_at: Option<String>,
     pub updated_at: Option<String>,
@@ -187,6 +191,8 @@ pub struct WorkItemDocument {
     pub title: String,
     pub status: String,
     pub objective: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub problem: Option<Value>,
     pub desired_outcomes: Vec<String>,
     pub classification: StoredWorkItemClassification,
     #[serde(default = "default_work_item_scope")]
@@ -195,6 +201,10 @@ pub struct WorkItemDocument {
     pub reporting: StoredWorkItemReporting,
     pub repositories: Vec<Value>,
     pub links: Vec<Value>,
+    #[serde(default)]
+    pub external_refs: Vec<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub completion: Option<Value>,
     pub context_path: String,
     pub created_at: String,
     pub updated_at: String,
@@ -210,6 +220,8 @@ pub struct WorkContextDocument {
     pub last_checkpoint_id: Option<String>,
     pub last_verified_git_ref: Option<String>,
     pub current_state: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lifecycle: Option<Value>,
     pub decisions: Vec<String>,
     pub files: Vec<StoredContextFile>,
     pub verification: StoredContextVerification,
@@ -221,6 +233,7 @@ pub struct WorkContextDocument {
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct WorkContextPatch {
     pub current_state: Option<String>,
+    pub lifecycle: Option<Value>,
     pub decisions: Option<Vec<String>>,
     pub files: Option<Vec<ContextFileInput>>,
     pub verification: Option<ContextVerificationInput>,
@@ -234,12 +247,15 @@ pub struct WorkItemUpdatePatch {
     pub title: Option<String>,
     pub status: Option<String>,
     pub objective: Option<String>,
+    pub problem: Option<Value>,
     pub desired_outcomes: Option<Vec<String>>,
     pub classification: Option<WorkItemClassificationInput>,
     pub scope: Option<String>,
     pub reporting: Option<WorkItemReportingInput>,
     pub repositories: Option<Vec<Value>>,
     pub links: Option<Vec<Value>>,
+    pub external_refs: Option<Vec<Value>>,
+    pub completion: Option<Value>,
     pub completed_at: Option<String>,
     pub context: Option<WorkContextPatch>,
 }
@@ -392,18 +408,21 @@ pub fn normalize_work_item(
 
     let status = input.status.unwrap_or_else(|| "planned".to_string());
     let work_item = WorkItemDocument {
-        schema_version: "1.0".to_string(),
+        schema_version: "1.1".to_string(),
         id: input.id,
         project_id: input.project_id,
         title: input.title,
         status: status.clone(),
         objective: input.objective,
+        problem: input.problem,
         desired_outcomes: input.desired_outcomes.unwrap_or_default(),
         classification: normalize_classification(input.classification.unwrap_or_default()),
         scope: input.scope.unwrap_or_else(default_work_item_scope),
         reporting: normalize_reporting(input.reporting.unwrap_or_default()),
         repositories: input.repositories.unwrap_or_default(),
         links: input.links.unwrap_or_default(),
+        external_refs: input.external_refs.unwrap_or_default(),
+        completion: input.completion,
         context_path: canonical_context_path,
         created_at: input.created_at.unwrap_or_else(|| now.to_string()),
         updated_at: input.updated_at.unwrap_or_else(|| now.to_string()),
@@ -416,7 +435,7 @@ pub fn normalize_work_item(
     let context_input = input.context.unwrap_or_default();
     let verification = context_input.verification.unwrap_or_default();
     let context = WorkContextDocument {
-        schema_version: "1.0".to_string(),
+        schema_version: "1.1".to_string(),
         work_item_id: work_item.id.clone(),
         project_id: work_item.project_id.clone(),
         updated_at: work_item.updated_at.clone(),
@@ -425,6 +444,7 @@ pub fn normalize_work_item(
         current_state: context_input
             .current_state
             .unwrap_or_else(|| DEFAULT_CURRENT_STATE.to_string()),
+        lifecycle: context_input.lifecycle,
         decisions: context_input.decisions.unwrap_or_default(),
         files: normalize_files(context_input.files),
         verification: StoredContextVerification {
@@ -499,7 +519,7 @@ fn git_value(value: Option<&str>) -> String {
 pub fn render_context(work_item: &WorkItemDocument, context: &WorkContextDocument) -> String {
     format!(
         "---\n\
-schema_version: \"1.0\"\n\
+schema_version: {}\n\
 work_item_id: {}\n\
 project_id: {}\n\
 title: {}\n\
@@ -531,6 +551,7 @@ last_verified_git_ref: {}\n\
 - 브랜치: {}\n\
 - 커밋: {}\n\
 - 확인 시각: {}\n",
+        json_string(&context.schema_version),
         json_string(&work_item.id),
         json_string(&work_item.project_id),
         json_string(&work_item.title),
@@ -893,6 +914,9 @@ fn apply_context_patch(context: &mut WorkContextDocument, patch: WorkContextPatc
     if let Some(value) = patch.current_state {
         context.current_state = value;
     }
+    if let Some(value) = patch.lifecycle {
+        context.lifecycle = Some(value);
+    }
     if let Some(value) = patch.decisions {
         context.decisions = value;
     }
@@ -933,6 +957,9 @@ fn apply_update(
     if let Some(value) = patch.objective {
         work_item.objective = value;
     }
+    if let Some(value) = patch.problem {
+        work_item.problem = Some(value);
+    }
     if let Some(value) = patch.desired_outcomes {
         work_item.desired_outcomes = value;
     }
@@ -950,6 +977,12 @@ fn apply_update(
     }
     if let Some(value) = patch.links {
         work_item.links = value;
+    }
+    if let Some(value) = patch.external_refs {
+        work_item.external_refs = value;
+    }
+    if let Some(value) = patch.completion {
+        work_item.completion = Some(value);
     }
     work_item.completed_at = if work_item.status == "completed" {
         Some(
@@ -1273,6 +1306,7 @@ mod tests {
             title: "인증 \"재시도\" 개선".to_string(),
             status: Some("in_progress".to_string()),
             objective: "토큰 만료 시 요청을 안전하게 재시도한다.".to_string(),
+            problem: None,
             desired_outcomes: Some(vec!["인증 갱신 동작을 테스트로 검증한다.".to_string()]),
             classification: Some(WorkItemClassificationInput {
                 initiative_id: Some("authentication".to_string()),
@@ -1296,6 +1330,8 @@ mod tests {
                 "external_id": "142",
                 "url": "https://example.com/issues/142"
             })]),
+            external_refs: None,
+            completion: None,
             context_path: None,
             created_at: Some(CREATED_AT.to_string()),
             updated_at: Some(CREATED_AT.to_string()),

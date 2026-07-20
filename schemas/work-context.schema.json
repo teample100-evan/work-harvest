@@ -21,7 +21,7 @@
     "git"
   ],
   "properties": {
-    "schema_version": { "const": "1.0" },
+    "schema_version": { "enum": ["1.0", "1.1"] },
     "work_item_id": { "$ref": "./common.schema.json#/$defs/identifier" },
     "project_id": { "$ref": "./common.schema.json#/$defs/identifier" },
     "updated_at": { "$ref": "./common.schema.json#/$defs/timestamp" },
@@ -33,6 +33,23 @@
     },
     "last_verified_git_ref": { "type": ["string", "null"] },
     "current_state": { "$ref": "./common.schema.json#/$defs/nonEmptyString" },
+    "lifecycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target_gate", "current_gate", "external_state", "remaining_gates", "observed_at"],
+      "properties": {
+        "target_gate": { "type": ["string", "null"] },
+        "current_gate": { "type": ["string", "null"] },
+        "external_state": { "type": ["string", "null"] },
+        "remaining_gates": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "observed_at": {
+          "oneOf": [
+            { "$ref": "./common.schema.json#/$defs/timestamp" },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
     "decisions": {
       "type": "array",
       "items": { "$ref": "./common.schema.json#/$defs/nonEmptyString" }

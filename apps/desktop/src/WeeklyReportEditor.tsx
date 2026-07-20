@@ -7,6 +7,7 @@ import {
   type FileRevision,
   type PerformanceNoteSourceRevision,
   type WeeklyReportInput,
+  type WorkItemScope,
   type WeeklyReportWritePreview,
 } from "./desktop";
 import { WriteDiffReview } from "./WriteDiffReview";
@@ -52,13 +53,15 @@ export function WeeklyReportEditor({
   const [startDate, setStartDate] = useState(initialStartDate);
   const [endDate, setEndDate] = useState(initialEndDate);
   const [output, setOutput] = useState("");
+  const [scope, setScope] = useState<WorkItemScope | "all">("company");
+  const [includeSupporting, setIncludeSupporting] = useState(false);
   const [preview, setPreview] = useState<WeeklyReportWritePreview | null>(null);
   const [pending, setPending] = useState<PendingWeeklyReport | null>(null);
   const [reviewedMarkdown, setReviewedMarkdown] = useState("");
   const [error, setError] = useState<DesktopWriteError | null>(null);
   const [dateError, setDateError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const isDirty = output.trim().length > 0 || preview !== null;
+  const isDirty = output.trim().length > 0 || scope !== "company" || includeSupporting || preview !== null;
 
   function requestClose() {
     if (saving) return;
@@ -80,6 +83,8 @@ export function WeeklyReportEditor({
     const input: WeeklyReportInput = {
       start_date: startDate,
       end_date: endDate,
+      scope,
+      include_supporting: includeSupporting,
       output: output.trim() || null,
     };
     try {
@@ -152,6 +157,9 @@ export function WeeklyReportEditor({
           : null,
         stats.unknown_period_checkpoint_count > 0
           ? `기간 미확인 ${stats.unknown_period_checkpoint_count}개 제외`
+          : null,
+        stats.reporting_excluded_checkpoint_count > 0
+          ? `범위·보고 기준 제외 ${stats.reporting_excluded_checkpoint_count}개`
           : null,
       ]
         .filter(Boolean)
@@ -247,11 +255,36 @@ export function WeeklyReportEditor({
                     onChange={(event) => setEndDate(event.target.value)}
                   />
                 </label>
+                <label className="editor-field">
+                  <span>업무 범위</span>
+                  <select
+                    value={scope}
+                    onChange={(event) => setScope(event.target.value as WorkItemScope | "all")}
+                  >
+                    <option value="company">회사 업무</option>
+                    <option value="personal">개인 업무</option>
+                    <option value="unclassified">미분류 업무</option>
+                    <option value="all">전체 업무</option>
+                  </select>
+                  <small>회사 보고에는 회사 업무만 선택하는 것을 권장합니다.</small>
+                </label>
+                <label className="editor-field">
+                  <span>지원 활동</span>
+                  <span className="editor-checkbox-row">
+                    <input
+                      type="checkbox"
+                      checked={includeSupporting}
+                      onChange={(event) => setIncludeSupporting(event.target.checked)}
+                    />
+                    지원 활동도 별도 업무로 포함
+                  </span>
+                  <small>브랜치 동기화 같은 지원 활동은 기본적으로 제외됩니다.</small>
+                </label>
                 <label className="editor-field full">
                   <span>저장 경로 · 선택</span>
                   <input
                     value={output}
-                    placeholder={`reports/weekly/${startDate.replaceAll("-", "")}_to_${endDate.replaceAll("-", "")}.md`}
+                    placeholder={`reports/weekly/${startDate.replaceAll("-", "")}_to_${endDate.replaceAll("-", "")}${scope === "all" ? "" : `_${scope}`}.md`}
                     onChange={(event) => setOutput(event.target.value)}
                   />
                   <small>비워 두면 기간으로 기본 경로를 생성합니다. 데이터 폴더 내부의 .md 경로만 허용합니다.</small>

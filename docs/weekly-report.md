@@ -4,6 +4,10 @@
 
 ## 집계 기준
 
+- 데스크톱 앱의 기본 범위는 `company`다. `personal`, `unclassified`, `all`로 바꿀 수 있다.
+- `reporting.mode: primary` 업무만 기본 포함한다.
+- `reporting.mode: supporting` 업무는 `보조 활동 포함`을 켰을 때만 포함한다.
+- `reporting.mode: excluded` 업무는 항상 제외한다.
 - 체크포인트의 `work_period.start`와 `work_period.end`가 선택 기간과 겹치면 포함한다.
 - 작업 기간이 모두 `null`인 체크포인트는 집계에서 제외하고 `기간 미확인` 수치로 표시한다.
 - correction이 가리키는 원본 체크포인트는 성과 집계에서 대체하고 정정된 유효 기록만 사용한다.
@@ -26,7 +30,9 @@
 기본 경로는 다음과 같다.
 
 ```text
-reports/weekly/<시작일>_to_<종료일>.md
+reports/weekly/<시작일>_to_<종료일>_<scope>.md
 ```
+
+`scope: all`일 때만 이전과 같은 `<시작일>_to_<종료일>.md` 경로를 사용한다. 회사 업무를 기본으로 검토하는 앱에서는 예를 들어 `20260713_to_20260719_company.md`가 된다.
 
 앱은 미리보기 시점의 업무·Context·체크포인트 revision을 함께 보관한다. 같은 경로의 기존 보고서가 있으면 기존 내용과 새 초안의 변경을 보여주고, 저장 시 덮어쓰기 여부를 다시 확인한다. 기존 보고서나 집계 원본이 검토 중 바뀌면 덮어쓰지 않고 최신 원본으로 다시 검토하도록 안내한다.

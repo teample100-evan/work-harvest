@@ -76,6 +76,10 @@ id: AUTH-142
 project_id: jajak-front
 title: 인증 시스템 개선
 objective: 토큰 만료 시 요청을 안전하게 재시도한다.
+scope: company
+reporting:
+  mode: primary
+  exclusion_reason: null
 desired_outcomes:
   - 인증 갱신 동작을 테스트로 검증한다.
 classification:
@@ -92,10 +96,26 @@ context:
 
 `context`는 `context.json`의 초기 상태를 만들고 `context.md`로 렌더링된다.
 
+`scope`는 `company`, `personal`, `unclassified` 중 하나다. `reporting.mode`는 `primary`, `supporting`, `excluded` 중 하나다. 새 기록은 가능한 한 `scope`를 명시하고, 브랜치 병합·동기화·포맷팅·로컬 환경 정리처럼 독립 성과가 아닌 활동은 `supporting`으로 분류한다.
+
+## `work-item update`
+
+```bash
+pnpm wh work-item update <id> --input <file|-> [--root <path>] [--json]
+```
+
+기존 업무 항목의 변경할 필드만 JSON 또는 YAML patch로 전달한다. CLI가 현재 revision을 읽고 충돌 방지 계약으로 수정한다. 잘못 분류한 업무를 주간 보고에서 제외하는 예시는 다음과 같다.
+
+```yaml
+reporting:
+  mode: excluded
+  exclusion_reason: 독립 성과가 아닌 브랜치 동기화 기록
+```
+
 ## `work-item list`
 
 ```bash
-pnpm wh work-item list [--project <id>] [--status <status>] [--compact] [--root <path>] [--json]
+pnpm wh work-item list [--project <id>] [--status <status>] [--scope <scope>] [--reporting-mode <mode>] [--compact] [--root <path>] [--json]
 ```
 
 업무 항목을 최근 갱신 순서로 출력한다. 에이전트는 새 업무를 만들기 전에 이 명령으로 기존 업무 항목 후보를 확인한다.
@@ -215,6 +235,22 @@ reports/performance-notes/<work_item_id>-<마지막_작업일>.md
 생성 문서는 [`templates/performance-note.md`](../templates/performance-note.md)의 공통 구성에 맞춘다. 체크포인트에서 확인할 수 있는 활동·결정·검증·결과·근거는 자동으로 채우고, 근거가 없는 수치나 배포 결과는 `미확인`으로 표시한다. 필요한 경우 사용자가 섹션을 삭제·확장해 완성한다.
 
 데스크톱 앱에서는 같은 Core가 만든 전체 Markdown diff와 업무·context·체크포인트 source revision을 저장 전에 검토한다. 검토 뒤 원본이 바뀌거나 체크포인트가 추가되면 초안을 생성하지 않고 최신 원본 재검토를 요구한다.
+
+## `report weekly`
+
+```bash
+pnpm wh report weekly --start <YYYY-MM-DD> --end <YYYY-MM-DD> [--scope <scope>] [--include-supporting] [--output <path>] [--root <path>] [--json]
+```
+
+지정 기간의 주간 보고서 초안을 미리보기로 반환한다. CLI 명령 자체는 파일을 저장하지 않으므로 에이전트가 내용을 검토한 뒤 회사 폼에 맞춰 작성할 수 있다.
+
+회사 업무만 준비할 때는 다음처럼 실행한다.
+
+```bash
+pnpm wh report weekly --start 2026-07-13 --end 2026-07-19 --scope company --json
+```
+
+기본적으로 `primary` 업무만 포함한다. `--include-supporting`을 지정하면 `supporting`도 포함하고, `excluded`는 항상 제외한다. `--scope`를 생략하면 모든 범위를 집계한다.
 
 ## `validate`
 

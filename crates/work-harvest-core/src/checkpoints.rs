@@ -972,6 +972,8 @@ mod tests {
             objective: "인증 갱신을 검증한다.".to_string(),
             desired_outcomes: None,
             classification: None,
+            scope: Some("company".to_string()),
+            reporting: None,
             repositories: None,
             links: None,
             context_path: None,

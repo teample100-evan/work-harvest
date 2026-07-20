@@ -1175,6 +1175,149 @@ h2 {
   box-shadow: 0 0 0 3px rgb(67 111 79 / 11%);
 }
 
+.editor-checkbox-row {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  min-height: 40px;
+}
+
+.editor-checkbox-row input[type="checkbox"] {
+  height: 16px;
+  margin: 0;
+  width: 16px;
+}
+
+.detail-actions-item.danger {
+  color: var(--color-danger, #c33b32);
+}
+
+.trash-page {
+  display: grid;
+  gap: 18px;
+}
+
+.trash-page-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  border-bottom: 1px solid var(--color-border-subtle);
+  padding-bottom: 20px;
+}
+
+.trash-page-heading h2 {
+  color: var(--color-text-strong);
+  font-size: 22px;
+  font-weight: 650;
+}
+
+.trash-page-heading p:not(.section-label) {
+  margin: 7px 0 0;
+  color: var(--color-text-subtle);
+  font-size: var(--text-sm);
+}
+
+.trash-page-state,
+.trash-page-empty {
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 54px 24px;
+  color: var(--color-text-subtle);
+  background: #fff;
+  text-align: center;
+}
+
+.trash-page-empty-icon,
+.trash-page-item-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-muted);
+  background: var(--color-surface-muted);
+}
+
+.trash-page-empty-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 18px;
+  margin-bottom: 14px;
+}
+
+.trash-page-empty h3 {
+  margin: 0;
+  color: var(--color-text-strong);
+  font-size: var(--text-body);
+  font-weight: 630;
+}
+
+.trash-page-empty p {
+  margin: 7px 0 0;
+  font-size: var(--text-sm);
+}
+
+.trash-page-list {
+  display: grid;
+  gap: 10px;
+}
+
+.trash-page-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  min-width: 0;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 15px 16px;
+  background: #fff;
+}
+
+.trash-page-item-copy {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 12px;
+}
+
+.trash-page-item-copy > span:last-child {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.trash-page-item-copy strong,
+.trash-page-item-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trash-page-item-copy strong {
+  color: var(--color-text-strong);
+  font-size: var(--text-ui);
+  font-weight: 620;
+}
+
+.trash-page-item-copy small {
+  color: var(--color-text-subtle);
+  font-size: var(--text-xs);
+}
+
+.trash-page-item-icon {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+}
+
+.trash-page-note {
+  margin: 2px 2px 0;
+  color: var(--color-text-subtle);
+  font-size: var(--text-xs);
+  line-height: 1.6;
+}
+
 .editor-field input:disabled {
   color: #69736b;
   background: #efeee8;

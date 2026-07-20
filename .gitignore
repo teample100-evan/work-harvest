@@ -12,3 +12,4 @@ apps/desktop/icon-source.*
 apps/desktop/src-tauri/icons/*
 !apps/desktop/src-tauri/icons/icon.icns
 !apps/desktop/src-tauri/icons/icon.png
+!apps/desktop/src-tauri/icons/icon-source.png

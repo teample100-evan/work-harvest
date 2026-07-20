@@ -55,6 +55,14 @@ export function normalizeWorkItem(input, now = new Date().toISOString()) {
       work_types: stringList(input.classification?.work_types),
       tags: stringList(input.classification?.tags),
     },
+    scope: input.scope ?? "unclassified",
+    reporting: {
+      mode: input.reporting?.mode ?? "primary",
+      exclusion_reason:
+        (input.reporting?.mode ?? "primary") === "primary"
+          ? null
+          : (input.reporting?.exclusion_reason ?? null),
+    },
     repositories: input.repositories ?? [],
     links: input.links ?? [],
     context_path: contextPath,

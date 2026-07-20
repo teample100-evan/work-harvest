@@ -17,19 +17,20 @@ use work_harvest_core::{
     CheckpointInput, CheckpointWriteError, CheckpointWritePreview, CheckpointWriteResult,
     DataRootIndex, DataRootSnapshot, DataRootUpdate, FileRevision, PerformanceNoteInput,
     PerformanceNoteSourceRevision, PerformanceNoteWriteError, PerformanceNoteWritePreview,
-    PerformanceNoteWriteResult, WeeklyReportInput, WeeklyReportWritePreview,
+    PerformanceNoteWriteResult, TrashedWorkItem, WeeklyReportInput, WeeklyReportWritePreview,
     WeeklyReportWriteResult, WorkItemCreateInput, WorkItemDetail, WorkItemEditRevisions,
-    WorkItemEditSnapshot, WorkItemUpdatePatch, WorkItemWriteError, WorkItemWritePreview,
-    WorkItemWriteResult, WriteError, capture_checkpoint as capture_checkpoint_record,
-    checkpoint_markdown_path, context_markdown_path,
-    create_performance_note as create_performance_note_record,
+    WorkItemEditSnapshot, WorkItemTrashResult, WorkItemUpdatePatch, WorkItemWriteError,
+    WorkItemWritePreview, WorkItemWriteResult, WriteError,
+    capture_checkpoint as capture_checkpoint_record, checkpoint_markdown_path,
+    context_markdown_path, create_performance_note as create_performance_note_record,
     create_weekly_report as create_weekly_report_record, create_work_item as create_item,
-    get_work_item_detail as get_detail, performance_note_markdown_path,
-    preview_capture_checkpoint as preview_checkpoint_record,
+    get_work_item_detail as get_detail, list_trashed_work_items as list_trashed_items,
+    performance_note_markdown_path, preview_capture_checkpoint as preview_checkpoint_record,
     preview_create_work_item as preview_create_item,
     preview_performance_note as preview_performance_note_record,
     preview_update_work_item as preview_update_item,
     preview_weekly_report as preview_weekly_report_record, read_work_item_for_edit,
+    restore_work_item as restore_item, trash_work_item as trash_item,
     update_work_item as update_item, weekly_report_markdown_path, work_item_directory,
 };
 
@@ -116,14 +117,18 @@ fn write_error_kind(error: &WriteError) -> DesktopWriteErrorKind {
 
 fn work_item_error_kind(error: &WorkItemWriteError) -> DesktopWriteErrorKind {
     match error {
-        WorkItemWriteError::WorkItemNotFound(_) => DesktopWriteErrorKind::NotFound,
+        WorkItemWriteError::WorkItemNotFound(_) | WorkItemWriteError::TrashNotFound(_) => {
+            DesktopWriteErrorKind::NotFound
+        }
         WorkItemWriteError::InvalidInput(_)
         | WorkItemWriteError::Validation { .. }
-        | WorkItemWriteError::Inconsistent(_) => DesktopWriteErrorKind::Validation,
+        | WorkItemWriteError::Inconsistent(_)
+        | WorkItemWriteError::TrashConflict(_) => DesktopWriteErrorKind::Validation,
         WorkItemWriteError::Write(error) => write_error_kind(error),
         WorkItemWriteError::Read { .. }
         | WorkItemWriteError::Parse { .. }
-        | WorkItemWriteError::Serialize { .. } => DesktopWriteErrorKind::WriteFailed,
+        | WorkItemWriteError::Serialize { .. }
+        | WorkItemWriteError::TrashIo { .. } => DesktopWriteErrorKind::WriteFailed,
     }
 }
 
@@ -437,6 +442,31 @@ fn update_work_item(
 }
 
 #[tauri::command]
+fn trash_work_item(
+    state: State<'_, DesktopState>,
+    work_item_id: String,
+    trashed_at: String,
+) -> Result<WorkItemTrashResult, DesktopWriteError> {
+    trash_item(selected_write_root(&state)?, &work_item_id, &trashed_at)
+        .map_err(desktop_write_error)
+}
+
+#[tauri::command]
+fn list_trashed_work_items(
+    state: State<'_, DesktopState>,
+) -> Result<Vec<TrashedWorkItem>, DesktopWriteError> {
+    list_trashed_items(selected_write_root(&state)?).map_err(desktop_write_error)
+}
+
+#[tauri::command]
+fn restore_work_item(
+    state: State<'_, DesktopState>,
+    work_item_id: String,
+) -> Result<WorkItemTrashResult, DesktopWriteError> {
+    restore_item(selected_write_root(&state)?, &work_item_id).map_err(desktop_write_error)
+}
+
+#[tauri::command]
 fn preview_capture_checkpoint(
     state: State<'_, DesktopState>,
     input: CheckpointInput,
@@ -606,6 +636,9 @@ pub fn run() {
             preview_update_work_item,
             create_work_item,
             update_work_item,
+            trash_work_item,
+            list_trashed_work_items,
+            restore_work_item,
             preview_capture_checkpoint,
             capture_checkpoint,
             preview_performance_note,

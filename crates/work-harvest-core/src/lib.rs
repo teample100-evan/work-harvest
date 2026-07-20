@@ -28,13 +28,15 @@ pub use reports::{
 };
 pub use work_items::{
     ContextFileInput, ContextGitInput, ContextVerificationInput, StoredContextFile,
-    StoredContextGit, StoredContextVerification, StoredWorkItemClassification, WorkContextDocument,
-    WorkContextInput, WorkContextPatch, WorkItemChangeOperation, WorkItemClassificationInput,
-    WorkItemCreateInput, WorkItemDocument, WorkItemEditRevisions, WorkItemEditSnapshot,
-    WorkItemFileChange, WorkItemPaths, WorkItemUpdatePatch, WorkItemWriteError,
-    WorkItemWritePreview, WorkItemWriteResult, create_work_item, normalize_work_item,
-    preview_create_work_item, preview_update_work_item, read_work_item_for_edit, render_context,
-    update_work_item,
+    StoredContextGit, StoredContextVerification, StoredWorkItemClassification,
+    StoredWorkItemReporting, TrashedWorkItem, WorkContextDocument, WorkContextInput,
+    WorkContextPatch, WorkItemChangeOperation, WorkItemClassificationInput, WorkItemCreateInput,
+    WorkItemDocument, WorkItemEditRevisions, WorkItemEditSnapshot, WorkItemFileChange,
+    WorkItemPaths, WorkItemReportingInput, WorkItemTrashResult, WorkItemUpdatePatch,
+    WorkItemWriteError, WorkItemWritePreview, WorkItemWriteResult, create_work_item,
+    list_trashed_work_items, normalize_work_item, preview_create_work_item,
+    preview_update_work_item, read_work_item_for_edit, render_context, restore_work_item,
+    trash_work_item, update_work_item,
 };
 pub use write::{
     DataRootWriter, FileRevision, WriteCommit, WriteError, WriteExpectation, WriteOperation,
@@ -107,6 +109,8 @@ pub struct WorkItemSummary {
     pub project_id: String,
     pub title: String,
     pub status: String,
+    pub scope: String,
+    pub reporting_mode: String,
     pub updated_at: String,
     pub activity_dates: Vec<String>,
     pub current_state: Option<String>,
@@ -243,6 +247,8 @@ pub struct WorkItemDetail {
     pub objective: String,
     pub desired_outcomes: Vec<String>,
     pub classification: WorkItemClassification,
+    pub scope: String,
+    pub reporting: StoredWorkItemReporting,
     pub created_at: String,
     pub updated_at: String,
     pub completed_at: Option<String>,
@@ -419,6 +425,17 @@ fn inspect_work_item(
         project_id,
         title,
         status,
+        scope: value
+            .get("scope")
+            .and_then(Value::as_str)
+            .unwrap_or("unclassified")
+            .to_string(),
+        reporting_mode: value
+            .get("reporting")
+            .and_then(|reporting| reporting.get("mode"))
+            .and_then(Value::as_str)
+            .unwrap_or("primary")
+            .to_string(),
         updated_at,
         activity_dates: Vec::new(),
         current_state: context
@@ -744,6 +761,17 @@ pub fn get_work_item_detail(
             work_types: string_array(classification, "work_types"),
             tags: string_array(classification, "tags"),
         },
+        scope: work_item
+            .get("scope")
+            .and_then(Value::as_str)
+            .unwrap_or("unclassified")
+            .to_string(),
+        reporting: serde_json::from_value(
+            work_item.get("reporting").cloned().unwrap_or_else(
+                || serde_json::json!({ "mode": "primary", "exclusion_reason": null }),
+            ),
+        )
+        .unwrap_or_default(),
         created_at: string_field(&work_item, "created_at"),
         updated_at: string_field(&work_item, "updated_at"),
         completed_at: optional_string_field(&work_item, "completed_at"),

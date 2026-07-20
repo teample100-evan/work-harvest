@@ -8,22 +8,25 @@ use std::time::SystemTime;
 use work_harvest_core::{
     CheckpointInput, CheckpointWriteError, DataRootCounts, IssueSeverity, PerformanceNoteInput,
     PerformanceNoteWriteError, QueryError, StoredCheckpointRecord, StoredWorkItemRecord,
-    WorkContextDocument, WorkItemCreateInput, WorkItemDocument, WorkItemPaths, WorkItemWriteError,
-    WriteError, capture_checkpoint, create_performance_note_from_current, create_work_item,
-    find_last_checkpoint, inspect_data_root, list_work_item_records, read_work_item_for_edit,
-    show_work_item,
+    WeeklyReportInput, WorkContextDocument, WorkItemCreateInput, WorkItemDocument, WorkItemPaths,
+    WorkItemUpdatePatch, WorkItemWriteError, WriteError, capture_checkpoint,
+    create_performance_note_from_current, create_work_item, find_last_checkpoint,
+    inspect_data_root, list_work_item_records, preview_weekly_report, read_work_item_for_edit,
+    show_work_item, update_work_item,
 };
 
 const USAGE: &str = "Work Harvest CLI
 
 Usage:
   wh work-item create --input <file|-> [--root <path>] [--json]
-  wh work-item list [--project <id>] [--status <status>] [--compact] [--root <path>] [--json]
+  wh work-item update <id> --input <file|-> [--root <path>] [--json]
+  wh work-item list [--project <id>] [--status <status>] [--scope <scope>] [--reporting-mode <mode>] [--compact] [--root <path>] [--json]
   wh work-item show <id> [--compact] [--root <path>] [--json]
   wh checkpoint capture --input <file|-> [--compact] [--root <path>] [--json]
   wh checkpoint last --work-item <id> [--root <path>] [--json]
   wh checkpoint boundary --work-item <id> [--root <path>] [--json]
   wh report performance-note --work-item <id> [--output <path>] [--root <path>] [--json]
+  wh report weekly --start <date> --end <date> [--scope <scope>] [--include-supporting] [--output <path>] [--root <path>] [--json]
   wh validate [--root <path>] [--include-examples] [--json]
 
 Environment:
@@ -78,14 +81,22 @@ struct CommandOptions {
     include_examples: bool,
     project: Option<String>,
     status: Option<String>,
+    scope: Option<String>,
+    reporting_mode: Option<String>,
     work_item: Option<String>,
     output: Option<String>,
+    start: Option<String>,
+    end: Option<String>,
+    include_supporting: bool,
     compact: bool,
     positionals: Vec<String>,
 }
 
 fn is_boolean_option(name: &str) -> bool {
-    matches!(name, "json" | "help" | "include-examples" | "compact")
+    matches!(
+        name,
+        "json" | "help" | "include-examples" | "include-supporting" | "compact"
+    )
 }
 
 fn option_allowed(name: &str, allowed: &[&str]) -> bool {
@@ -101,8 +112,13 @@ fn set_option(options: &mut CommandOptions, name: &str, value: Option<String>) {
         "include-examples" => options.include_examples = true,
         "project" => options.project = value,
         "status" => options.status = value,
+        "scope" => options.scope = value,
+        "reporting-mode" => options.reporting_mode = value,
         "work-item" => options.work_item = value,
         "output" => options.output = value,
+        "start" => options.start = value,
+        "end" => options.end = value,
+        "include-supporting" => options.include_supporting = true,
         "compact" => options.compact = true,
         _ => unreachable!("validated option"),
     }
@@ -318,6 +334,8 @@ struct WorkItemListEntry {
     project_id: String,
     title: String,
     status: String,
+    scope: String,
+    reporting_mode: String,
     initiative_id: Option<String>,
     updated_at: String,
     current_state: String,
@@ -352,6 +370,8 @@ impl From<StoredWorkItemRecord> for WorkItemListEntry {
             project_id: record.work_item.project_id,
             title: record.work_item.title,
             status: record.work_item.status,
+            scope: record.work_item.scope,
+            reporting_mode: record.work_item.reporting.mode,
             initiative_id: record.work_item.classification.initiative_id,
             updated_at: record.work_item.updated_at,
             current_state: record.context.current_state,
@@ -519,8 +539,43 @@ fn handle_create_work_item(args: &[String]) -> Result<(), CliError> {
     )
 }
 
+fn handle_update_work_item(args: &[String]) -> Result<(), CliError> {
+    let options = parse_options(args, &["input"], true)?;
+    if options.help {
+        print!("{USAGE}");
+        return Ok(());
+    }
+    if options.positionals.len() != 1 {
+        return Err(CliError::usage(
+            "work-item update requires exactly one work item id",
+        ));
+    }
+    let work_item_id = &options.positionals[0];
+    let root = resolve_data_root(options.root.as_deref())?;
+    let patch: WorkItemUpdatePatch = read_structured_input(options.input.as_deref())?;
+    let expected = read_work_item_for_edit(&root, work_item_id)
+        .map_err(|error| map_work_item_error(error, Some(work_item_id)))?
+        .revisions;
+    let result = update_work_item(&root, work_item_id, expected, patch, &now_rfc3339())
+        .map_err(|error| map_work_item_error(error, Some(work_item_id)))?;
+    let output = WorkItemCreateOutput {
+        work_item: result.work_item,
+        context: result.context,
+        paths: result.paths,
+    };
+    print_result(
+        &output,
+        options.json,
+        format!("Updated work item {}", output.work_item.id),
+    )
+}
+
 fn handle_list_work_items(args: &[String]) -> Result<(), CliError> {
-    let options = parse_options(args, &["project", "status", "compact"], false)?;
+    let options = parse_options(
+        args,
+        &["project", "status", "scope", "reporting-mode", "compact"],
+        false,
+    )?;
     if options.help {
         print!("{USAGE}");
         return Ok(());
@@ -543,6 +598,14 @@ fn handle_list_work_items(args: &[String]) -> Result<(), CliError> {
                     .status
                     .as_ref()
                     .is_none_or(|status| item.status == *status)
+                && options
+                    .scope
+                    .as_ref()
+                    .is_none_or(|scope| item.scope == *scope)
+                && options
+                    .reporting_mode
+                    .as_ref()
+                    .is_none_or(|mode| item.reporting_mode == *mode)
         })
         .collect::<Vec<_>>();
     let message = if work_items.is_empty() {
@@ -552,8 +615,14 @@ fn handle_list_work_items(args: &[String]) -> Result<(), CliError> {
             .iter()
             .map(|item| {
                 format!(
-                    "{}\t{}\t{}\t{}\n  {}",
-                    item.id, item.status, item.project_id, item.title, item.current_state
+                    "{}\t{}\t{}\t{}\t{}\t{}\n  {}",
+                    item.id,
+                    item.status,
+                    item.scope,
+                    item.reporting_mode,
+                    item.project_id,
+                    item.title,
+                    item.current_state
                 )
             })
             .collect::<Vec<_>>()
@@ -788,6 +857,43 @@ fn handle_performance_note(args: &[String]) -> Result<(), CliError> {
     )
 }
 
+fn handle_weekly_report(args: &[String]) -> Result<(), CliError> {
+    let options = parse_options(
+        args,
+        &["start", "end", "scope", "include-supporting", "output"],
+        false,
+    )?;
+    if options.help {
+        print!("{USAGE}");
+        return Ok(());
+    }
+    let start_date = options
+        .start
+        .ok_or_else(|| CliError::usage("report weekly requires --start <YYYY-MM-DD>"))?;
+    let end_date = options
+        .end
+        .ok_or_else(|| CliError::usage("report weekly requires --end <YYYY-MM-DD>"))?;
+    let root = resolve_data_root(options.root.as_deref())?;
+    let preview = preview_weekly_report(
+        &root,
+        WeeklyReportInput {
+            start_date,
+            end_date,
+            scope: options.scope,
+            include_supporting: Some(options.include_supporting),
+            output: options.output,
+            markdown: None,
+        },
+        &now_rfc3339(),
+    )
+    .map_err(map_report_error)?;
+    let message = format!(
+        "Weekly report preview: {} work item(s), {} checkpoint(s)\n  output: {}",
+        preview.stats.work_item_count, preview.stats.checkpoint_count, preview.paths.report,
+    );
+    print_result(&preview, options.json, message)
+}
+
 fn validation_dataset(
     root: &Path,
     label: &str,
@@ -878,12 +984,14 @@ fn execute(args: &[String]) -> Result<(), CliError> {
     match (args[0].as_str(), args.get(1).map(String::as_str)) {
         ("validate", _) => handle_validate(&args[1..]),
         ("work-item", Some("create")) => handle_create_work_item(&args[2..]),
+        ("work-item", Some("update")) => handle_update_work_item(&args[2..]),
         ("work-item", Some("list")) => handle_list_work_items(&args[2..]),
         ("work-item", Some("show")) => handle_show_work_item(&args[2..]),
         ("checkpoint", Some("capture")) => handle_capture_checkpoint(&args[2..]),
         ("checkpoint", Some("last")) => handle_last_checkpoint(&args[2..]),
         ("checkpoint", Some("boundary")) => handle_checkpoint_boundary(&args[2..]),
         ("report", Some("performance-note")) => handle_performance_note(&args[2..]),
+        ("report", Some("weekly")) => handle_weekly_report(&args[2..]),
         _ => Err(CliError::usage(format!(
             "Unknown command: {}",
             args.join(" ")

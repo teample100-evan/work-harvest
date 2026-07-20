@@ -50,6 +50,7 @@ interface CheckpointDraft {
   outcomeImpact: string;
   blockers: string;
   nextSteps: string;
+  contextNextSteps: string;
   evidenceCommits: string;
   evidencePullRequests: string;
   evidenceIssues: string;
@@ -180,15 +181,16 @@ function initialDraft(snapshot: WorkItemEditSnapshot): CheckpointDraft {
     outcomes: "",
     outcomeImpact: "",
     blockers: "",
-    nextSteps: formatLines(snapshot.context.next_steps),
-    evidenceCommits: snapshot.context.git.commit ?? "",
+    nextSteps: "",
+    contextNextSteps: formatLines(snapshot.context.next_steps),
+    evidenceCommits: "",
     evidencePullRequests: "",
     evidenceIssues: "",
-    evidenceFiles: snapshot.context.files.map((file) => file.path).join("\n"),
+    evidenceFiles: "",
     evidenceCommands: "",
     evidenceUrls: "",
     correctionOf: "",
-    confidentiality: "normal",
+    confidentiality: "sensitive",
     currentState: snapshot.context.current_state,
     contextDecisions: formatLines(snapshot.context.decisions),
     contextVerificationCompleted: formatLines(snapshot.context.verification.completed),
@@ -274,7 +276,7 @@ function checkpointInput(draft: CheckpointDraft, workItemId: string): Checkpoint
         completed: splitLines(draft.contextVerificationCompleted),
         pending: splitLines(draft.contextVerificationPending),
       },
-      next_steps: splitLines(draft.nextSteps),
+      next_steps: splitLines(draft.contextNextSteps),
       risks: splitLines(draft.contextRisks),
     },
   };
@@ -692,8 +694,8 @@ export function CheckpointEditor({ workItemId, onClose, onSaved }: CheckpointEdi
                     <textarea rows={3} value={draft.blockers} placeholder="한 줄에 하나씩" onChange={(event) => setDraft({ ...draft, blockers: event.target.value })} />
                   </label>
                   <label className="editor-field">
-                    <span>다음 작업</span>
-                    <textarea rows={3} value={draft.nextSteps} placeholder="체크포인트와 Context에 함께 반영" onChange={(event) => setDraft({ ...draft, nextSteps: event.target.value })} />
+                    <span>이번 기록에서 새로 생긴 다음 작업</span>
+                    <textarea rows={3} value={draft.nextSteps} placeholder="이번 작업 구간에서 새로 확인된 항목만 입력" onChange={(event) => setDraft({ ...draft, nextSteps: event.target.value })} />
                   </label>
                 </div>
                 </section>
@@ -707,7 +709,7 @@ export function CheckpointEditor({ workItemId, onClose, onSaved }: CheckpointEdi
                     <h3 id="checkpoint-proof-title">연결할 근거</h3>
                   </div>
                   <span className="editor-preserved">
-                    Context의 Git 기준점과 파일을 자동 제안합니다
+                    이번 작업 구간을 직접 증명하는 근거만 연결합니다
                   </span>
                 </div>
                 <div className="editor-grid checkpoint-evidence-grid">
@@ -732,10 +734,31 @@ export function CheckpointEditor({ workItemId, onClose, onSaved }: CheckpointEdi
                 </div>
                 <div className="editor-grid">
                   <label className="editor-field full"><span>현재 상태</span><textarea required rows={4} value={draft.currentState} onChange={(event) => setDraft({ ...draft, currentState: event.target.value })} /></label>
-                  <label className="editor-field full"><span>누적 결정</span><textarea rows={3} value={draft.contextDecisions} placeholder="Context에 유지할 결정 · 한 줄에 하나씩" onChange={(event) => setDraft({ ...draft, contextDecisions: event.target.value })} /></label>
-                  <label className="editor-field"><span>검증 완료</span><textarea rows={3} value={draft.contextVerificationCompleted} onChange={(event) => setDraft({ ...draft, contextVerificationCompleted: event.target.value })} /></label>
-                  <label className="editor-field"><span>검증 대기</span><textarea rows={3} value={draft.contextVerificationPending} onChange={(event) => setDraft({ ...draft, contextVerificationPending: event.target.value })} /></label>
-                  <label className="editor-field full"><span>리스크</span><textarea rows={3} value={draft.contextRisks} onChange={(event) => setDraft({ ...draft, contextRisks: event.target.value })} /></label>
+                  <label className="editor-field full">
+                    <span>현재 다음 작업</span>
+                    <textarea rows={3} value={draft.contextNextSteps} placeholder="저장 후 Context에 유지할 항목 · 권장 최대 5개" onChange={(event) => setDraft({ ...draft, contextNextSteps: event.target.value })} />
+                    <small>{splitLines(draft.contextNextSteps).length}/5개 권장 · 완료된 항목은 제거하세요.</small>
+                  </label>
+                  <label className="editor-field full">
+                    <span>누적 결정</span>
+                    <textarea rows={3} value={draft.contextDecisions} placeholder="Context에 유지할 결정 · 한 줄에 하나씩" onChange={(event) => setDraft({ ...draft, contextDecisions: event.target.value })} />
+                    <small>{splitLines(draft.contextDecisions).length}/5개 권장 · 현재도 유효한 결정만 유지하세요.</small>
+                  </label>
+                  <label className="editor-field">
+                    <span>검증 완료</span>
+                    <textarea rows={3} value={draft.contextVerificationCompleted} onChange={(event) => setDraft({ ...draft, contextVerificationCompleted: event.target.value })} />
+                    <small>{splitLines(draft.contextVerificationCompleted).length}/5개 권장</small>
+                  </label>
+                  <label className="editor-field">
+                    <span>검증 대기</span>
+                    <textarea rows={3} value={draft.contextVerificationPending} onChange={(event) => setDraft({ ...draft, contextVerificationPending: event.target.value })} />
+                    <small>{splitLines(draft.contextVerificationPending).length}/3개 권장</small>
+                  </label>
+                  <label className="editor-field full">
+                    <span>리스크</span>
+                    <textarea rows={3} value={draft.contextRisks} onChange={(event) => setDraft({ ...draft, contextRisks: event.target.value })} />
+                    <small>{splitLines(draft.contextRisks).length}/3개 권장 · 해결된 항목은 제거하세요.</small>
+                  </label>
                   <div className="editor-field">
                     <span>기밀 수준</span>
                     <SelectMenu
@@ -745,6 +768,7 @@ export function CheckpointEditor({ workItemId, onClose, onSaved }: CheckpointEdi
                       options={confidentialityOptions}
                       value={draft.confidentiality}
                     />
+                    <small>내부 저장소·계정·로컬 경로가 포함되면 민감을 유지하세요.</small>
                   </div>
                 </div>
                 </section>

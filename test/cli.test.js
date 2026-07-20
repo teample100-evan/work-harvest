@@ -142,6 +142,20 @@ test("work item creation, checkpoint capture, and validation form one flow", () 
     assert.equal(listed.status, 0, listed.stderr);
     assert.equal(JSON.parse(listed.stdout).work_items[0].id, "AUTH-142");
 
+    const compactList = run([
+      "work-item",
+      "list",
+      "--compact",
+      "--root",
+      root,
+      "--json",
+    ]);
+    assert.equal(compactList.status, 0, compactList.stderr);
+    const compactListItem = JSON.parse(compactList.stdout).work_items[0];
+    assert.equal(compactListItem.id, "AUTH-142");
+    assert.equal(compactListItem.current_state, undefined);
+    assert.equal(compactListItem.next_steps, undefined);
+
     const shown = run([
       "work-item",
       "show",
@@ -155,6 +169,20 @@ test("work item creation, checkpoint capture, and validation form one flow", () 
       JSON.parse(shown.stdout).last_checkpoint.checkpoint.id,
       "CP-20260713-001",
     );
+
+    const compactShown = run([
+      "work-item",
+      "show",
+      "AUTH-142",
+      "--compact",
+      "--root",
+      root,
+      "--json",
+    ]);
+    assert.equal(compactShown.status, 0, compactShown.stderr);
+    const compactShownResult = JSON.parse(compactShown.stdout);
+    assert.equal(compactShownResult.last_checkpoint.id, "CP-20260713-001");
+    assert.equal(compactShownResult.last_checkpoint.summary, undefined);
 
     const last = run([
       "checkpoint",
@@ -170,6 +198,20 @@ test("work item creation, checkpoint capture, and validation form one flow", () 
       JSON.parse(last.stdout).checkpoint.id,
       "CP-20260713-001",
     );
+
+    const boundary = run([
+      "checkpoint",
+      "boundary",
+      "--work-item",
+      "AUTH-142",
+      "--root",
+      root,
+      "--json",
+    ]);
+    assert.equal(boundary.status, 0, boundary.stderr);
+    const boundaryResult = JSON.parse(boundary.stdout).boundary;
+    assert.equal(boundaryResult.id, "CP-20260713-001");
+    assert.equal(boundaryResult.activities, undefined);
 
     const report = run([
       "report",
@@ -233,6 +275,28 @@ test("work item creation, checkpoint capture, and validation form one flow", () 
       contexts: 1,
       checkpoints: 1,
     });
+
+    const compactPayload = checkpointPayload();
+    compactPayload.id = "CP-20260714-002";
+    compactPayload.captured_at = "2026-07-14T18:10:00+09:00";
+    const compactCaptured = run(
+      [
+        "checkpoint",
+        "capture",
+        "--input",
+        "-",
+        "--compact",
+        "--root",
+        root,
+        "--json",
+      ],
+      compactPayload,
+    );
+    assert.equal(compactCaptured.status, 0, compactCaptured.stderr);
+    const compactCaptureResult = JSON.parse(compactCaptured.stdout);
+    assert.equal(compactCaptureResult.checkpoint.id, "CP-20260714-002");
+    assert.equal(compactCaptureResult.checkpoint.activities, undefined);
+    assert.equal(compactCaptureResult.context.current_state, undefined);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

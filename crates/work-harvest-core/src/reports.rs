@@ -105,6 +105,9 @@ pub struct WeeklyReportInput {
 pub struct WeeklyReportStats {
     pub work_item_count: usize,
     pub checkpoint_count: usize,
+    pub outcome_count: usize,
+    pub current_risk_count: usize,
+    pub current_next_step_count: usize,
     pub redacted_checkpoint_count: usize,
     pub excluded_checkpoint_count: usize,
     pub unknown_period_checkpoint_count: usize,
@@ -813,6 +816,7 @@ fn weekly_work_item_sources(
 }
 
 fn weekly_report_stats(
+    sources: &[PerformanceNoteSources],
     checkpoints: &[PerformanceNoteCheckpoint],
     redacted_checkpoint_count: usize,
     excluded_checkpoint_count: usize,
@@ -843,10 +847,17 @@ fn weekly_report_stats(
         .iter()
         .flat_map(|entry| entry.checkpoint.verifications.iter())
         .collect::<Vec<_>>();
+    let (risks, next_steps) = weekly_followups(sources, checkpoints);
 
     WeeklyReportStats {
         work_item_count,
         checkpoint_count: checkpoints.len(),
+        outcome_count: checkpoints
+            .iter()
+            .map(|entry| entry.checkpoint.outcomes.len())
+            .sum(),
+        current_risk_count: risks.len(),
+        current_next_step_count: next_steps.len(),
         redacted_checkpoint_count,
         excluded_checkpoint_count,
         unknown_period_checkpoint_count,
@@ -869,6 +880,16 @@ fn weekly_report_stats(
             .filter(|verification| verification.status == "not_run")
             .count(),
     }
+}
+
+fn effective_report_checkpoints(
+    checkpoints: Vec<PerformanceNoteCheckpoint>,
+    corrected: &BTreeSet<String>,
+) -> Vec<PerformanceNoteCheckpoint> {
+    checkpoints
+        .into_iter()
+        .filter(|entry| !corrected.contains(&entry.checkpoint.id))
+        .collect()
 }
 
 fn markdown_cell(value: &str) -> String {
@@ -898,27 +919,35 @@ fn weekly_work_item_sections(
         .into_iter()
         .filter_map(|(work_item_id, entries)| {
             let source = sources.get(work_item_id)?;
-            let outcomes = entries
+            let mut seen = BTreeSet::new();
+            let mut outcomes = Vec::new();
+            for outcome in entries
                 .iter()
-                .flat_map(|entry| entry.checkpoint.outcomes.iter())
-                .map(|outcome| outcome.description.clone())
-                .collect::<Vec<_>>();
-            let summaries = entries
-                .iter()
-                .map(|entry| entry.checkpoint.summary.clone())
-                .collect::<Vec<_>>();
+                .rev()
+                .flat_map(|entry| entry.checkpoint.outcomes.iter().rev())
+            {
+                let rendered = outcome.impact.as_deref().map_or_else(
+                    || outcome.description.clone(),
+                    |impact| format!("{} — 영향: {impact}", outcome.description),
+                );
+                if seen.insert(rendered.clone()) {
+                    outcomes.push(rendered);
+                }
+                if outcomes.len() == 3 {
+                    break;
+                }
+            }
             let latest_status = entries
                 .last()
                 .map(|entry| entry.checkpoint.status_after.as_str())
                 .unwrap_or(source.work_item.status.as_str());
             Some(format!(
-                "### {} · {}\n\n- 업무 ID: `{}`\n- 기간 종료 상태: {}\n- 핵심 결과:\n{}\n- 작업 요약:\n{}",
+                "### {} · {}\n\n- 업무 ID: `{}`\n- 기간 종료 상태: {}\n- 핵심 결과와 영향:\n{}",
                 source.work_item.project_id,
                 source.work_item.title,
                 source.work_item.id,
                 latest_status,
-                bullets(&outcomes, "구조화된 결과 미기록"),
-                bullets(&summaries, "요약 미기록")
+                bullets(&outcomes, "구조화된 결과 미기록")
             ))
         })
         .collect::<Vec<_>>()
@@ -926,73 +955,114 @@ fn weekly_work_item_sections(
 }
 
 fn weekly_git_summary(checkpoints: &[PerformanceNoteCheckpoint]) -> String {
-    let mut entries = BTreeSet::new();
+    let mut pull_requests = BTreeMap::<String, Vec<String>>::new();
+    let mut latest_git = BTreeMap::new();
     for entry in checkpoints {
         let checkpoint = &entry.checkpoint;
         if let Some(git) = &checkpoint.git {
-            entries.insert(format!(
-                "{} · {} · {} → {} · 작업 트리 {}",
-                git.repository,
-                git.branch.as_deref().unwrap_or("브랜치 미확인"),
-                git.head_before.as_deref().unwrap_or("시작 커밋 미확인"),
-                git.head_after.as_deref().unwrap_or("종료 커밋 미확인"),
-                match git.dirty {
-                    Some(true) => "수정 포함",
-                    Some(false) => "깨끗함",
-                    None => "미확인",
-                }
-            ));
+            latest_git.insert(checkpoint.work_item_id.clone(), git);
         }
-        entries.extend(
-            checkpoint
-                .evidence
-                .commits
-                .iter()
-                .map(|commit| format!("커밋 `{commit}` · {}", checkpoint.title)),
-        );
-        entries.extend(
-            checkpoint
-                .evidence
-                .pull_requests
-                .iter()
-                .map(|pull_request| format!("PR {pull_request} · {}", checkpoint.title)),
-        );
+        let work_item_pull_requests = pull_requests
+            .entry(checkpoint.work_item_id.clone())
+            .or_default();
+        for pull_request in &checkpoint.evidence.pull_requests {
+            if !work_item_pull_requests.contains(pull_request) {
+                work_item_pull_requests.push(pull_request.clone());
+            }
+        }
     }
-    bullets(
-        &entries.into_iter().collect::<Vec<_>>(),
-        "기록된 Git 변경 없음",
-    )
+
+    let work_item_ids = pull_requests
+        .keys()
+        .chain(latest_git.keys())
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    let entries = work_item_ids
+        .into_iter()
+        .filter_map(|work_item_id| {
+            if let Some(pull_request) = pull_requests
+                .get(&work_item_id)
+                .and_then(|items| items.last())
+            {
+                return Some(format!("{work_item_id} · 대표 PR {pull_request}"));
+            }
+            latest_git.get(&work_item_id).map(|git| {
+                format!(
+                    "{} · {} · {} · {}",
+                    work_item_id,
+                    git.repository,
+                    git.branch.as_deref().unwrap_or("브랜치 미확인"),
+                    git.head_after.as_deref().unwrap_or("커밋 미확인")
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    bullets(&entries, "기록된 Git 변경 없음")
 }
 
 fn weekly_verification_table(checkpoints: &[PerformanceNoteCheckpoint]) -> String {
-    let rows = checkpoints
-        .iter()
-        .flat_map(|entry| {
-            entry
-                .checkpoint
-                .verifications
+    let mut latest = BTreeMap::new();
+    for entry in checkpoints {
+        for verification in &entry.checkpoint.verifications {
+            latest.insert(
+                (
+                    entry.checkpoint.work_item_id.as_str(),
+                    verification.kind.as_str(),
+                ),
+                verification,
+            );
+        }
+    }
+    let mut grouped = BTreeMap::<&str, Vec<(&str, &_)>>::new();
+    for ((work_item_id, kind), verification) in latest {
+        grouped
+            .entry(work_item_id)
+            .or_default()
+            .push((kind, verification));
+    }
+    let rows = grouped
+        .into_iter()
+        .map(|(work_item_id, mut verifications)| {
+            verifications.sort_by(|(left_kind, left), (right_kind, right)| {
+                let rank = |status: &str| match status {
+                    "failed" => 4,
+                    "partial" => 3,
+                    "not_run" => 2,
+                    "passed" => 1,
+                    _ => 0,
+                };
+                rank(&right.status)
+                    .cmp(&rank(&left.status))
+                    .then_with(|| left_kind.cmp(right_kind))
+            });
+            let overall_status = verifications
+                .first()
+                .map(|(_, verification)| verification.status.as_str())
+                .unwrap_or("not_run");
+            let details = verifications
                 .iter()
-                .map(move |verification| {
-                    format!(
-                        "| {} | {} | {} | {} | {} |",
-                        markdown_cell(&entry.checkpoint.work_item_id),
-                        markdown_cell(&verification.kind),
-                        markdown_cell(&verification.status),
-                        markdown_cell(&verification.description),
-                        verification
-                            .command
-                            .as_deref()
-                            .map(markdown_cell)
-                            .unwrap_or_else(|| "—".to_string())
-                    )
-                })
+                .take(2)
+                .map(|(kind, verification)| format!("{}: {}", kind, verification.description))
+                .collect::<Vec<_>>()
+                .join("; ");
+            let summary = if verifications.len() > 2 {
+                format!("{}개 유형 · {details}", verifications.len())
+            } else {
+                details
+            };
+            format!(
+                "| {} | {} | {} |",
+                markdown_cell(work_item_id),
+                markdown_cell(overall_status),
+                markdown_cell(&summary),
+            )
         })
         .collect::<Vec<_>>();
     if rows.is_empty() {
         return "- 기록된 검증 결과가 없습니다.".to_string();
     }
     format!(
-        "| 업무 | 유형 | 상태 | 설명 | 명령 |\n| --- | --- | --- | --- | --- |\n{}",
+        "| 업무 | 종합 상태 | 대표 검증 |\n| --- | --- | --- |\n{}",
         rows.join("\n")
     )
 }
@@ -1009,25 +1079,17 @@ fn weekly_followups(
         .iter()
         .filter(|source| included_work_items.contains(source.work_item.id.as_str()))
         .flat_map(|source| source.context.risks.iter().cloned())
-        .chain(
-            checkpoints
-                .iter()
-                .flat_map(|entry| entry.checkpoint.blockers.iter().cloned()),
-        )
         .collect::<BTreeSet<_>>()
         .into_iter()
+        .take(10)
         .collect::<Vec<_>>();
     let next_steps = sources
         .iter()
         .filter(|source| included_work_items.contains(source.work_item.id.as_str()))
         .flat_map(|source| source.context.next_steps.iter().cloned())
-        .chain(
-            checkpoints
-                .iter()
-                .flat_map(|entry| entry.checkpoint.next_steps.iter().cloned()),
-        )
         .collect::<BTreeSet<_>>()
         .into_iter()
+        .take(10)
         .collect::<Vec<_>>();
     (risks, next_steps)
 }
@@ -1056,17 +1118,19 @@ fn render_weekly_report(
         .collect::<Vec<_>>();
 
     format!(
-        "---\nreport_type: weekly\nstart_date: {}\nend_date: {}\ngenerated_from_checkpoints: {}\ngenerated_at: {}\nconfidentiality: {confidentiality}\n---\n\n# 주간 성과보고서 · {start_date} ~ {end_date}\n\n> 구조화된 체크포인트에서 자동 집계한 초안입니다. 기간, Git 변경, 검증 결과와 다음 작업을 확인한 뒤 공유하세요.\n\n## 한눈에 보기\n\n- 업무: {}개\n- 포함 체크포인트: {}개\n- 민감 체크포인트: {}개 세부 정보 생략\n- 제한 체크포인트: {}개 제외\n- 기간 미확인 체크포인트: {}개 제외\n- Git 커밋: {}개\n- 검증: {}개 · 통과 {} · 실패 {} · 부분 통과 {} · 미실행 {}\n\n## 업무별 성과\n\n{}\n\n## Git 변경\n\n{}\n\n## 테스트·검증 결과\n\n{}\n\n## 위험 및 차단 사항\n\n{}\n\n## 다음 주 우선순위\n\n{}\n\n## 근거 기록\n\n{}\n",
+        "---\nreport_type: weekly\nstart_date: {}\nend_date: {}\ngenerated_from_checkpoints: {}\ngenerated_at: {}\nconfidentiality: {confidentiality}\n---\n\n# 주간 성과보고서 · {start_date} ~ {end_date}\n\n> 구조화된 체크포인트에서 핵심 결과와 현재 상태를 선별한 초안입니다. 상세 명령·파일·커밋은 근거 기록에서 확인하세요.\n\n## 한눈에 보기\n\n- 업무: {}개\n- 포함 체크포인트: {}개\n- 기록된 결과: {}개\n- 현재 리스크: {}개\n- 현재 다음 작업: {}개\n- 민감 체크포인트: {}개 세부 정보 생략\n- 제한 체크포인트: {}개 제외\n- 기간 미확인 체크포인트: {}개 제외\n- 검증: {}개 · 통과 {} · 실패 {} · 부분 통과 {} · 미실행 {}\n\n## 업무별 성과\n\n{}\n\n## 주요 변경 근거\n\n{}\n\n## 대표 검증\n\n{}\n\n## 현재 위험 및 차단 사항\n\n{}\n\n## 다음 주 우선순위\n\n{}\n\n## 상세 근거 기록\n\n{}\n",
         serde_json::to_string(start_date).expect("serializing a date cannot fail"),
         serde_json::to_string(end_date).expect("serializing a date cannot fail"),
         serde_json::to_string(&checkpoint_ids).expect("serializing checkpoint IDs cannot fail"),
         serde_json::to_string(generated_at).expect("serializing a timestamp cannot fail"),
         stats.work_item_count,
         stats.checkpoint_count,
+        stats.outcome_count,
+        stats.current_risk_count,
+        stats.current_next_step_count,
         stats.redacted_checkpoint_count,
         stats.excluded_checkpoint_count,
         stats.unknown_period_checkpoint_count,
-        stats.git_commit_count,
         stats.verification_count,
         stats.passed_verification_count,
         stats.failed_verification_count,
@@ -1144,17 +1208,30 @@ fn prepare_performance_note(
 ) -> Result<PreparedPerformanceNote, PerformanceNoteWriteError> {
     let snapshot = read_performance_note_sources(writer.root(), &input.work_item_id)?;
     let checkpoints = sorted_checkpoints(writer.root(), &input.work_item_id)?;
-    let report_checkpoints = checkpoints
+    let corrected = checkpoints
         .iter()
-        .filter_map(checkpoint_for_report)
-        .collect::<Vec<_>>();
+        .filter_map(|entry| entry.checkpoint.correction_of.clone())
+        .collect::<BTreeSet<_>>();
+    let report_checkpoints = effective_report_checkpoints(
+        checkpoints
+            .iter()
+            .filter_map(checkpoint_for_report)
+            .collect::<Vec<_>>(),
+        &corrected,
+    );
     let redacted_checkpoint_count = checkpoints
         .iter()
-        .filter(|entry| entry.checkpoint.confidentiality == "sensitive")
+        .filter(|entry| {
+            !corrected.contains(&entry.checkpoint.id)
+                && entry.checkpoint.confidentiality == "sensitive"
+        })
         .count();
     let excluded_checkpoint_count = checkpoints
         .iter()
-        .filter(|entry| entry.checkpoint.confidentiality == "restricted")
+        .filter(|entry| {
+            !corrected.contains(&entry.checkpoint.id)
+                && entry.checkpoint.confidentiality == "restricted"
+        })
         .count();
     let date = report_checkpoints
         .last()
@@ -1419,19 +1496,33 @@ fn prepare_weekly_report(
             .then_with(|| left.checkpoint.id.cmp(&right.checkpoint.id))
     });
     let sources = weekly_work_item_sources(writer.root(), &checkpoints)?;
-    let report_checkpoints = checkpoints
+    let corrected = checkpoints
         .iter()
-        .filter_map(checkpoint_for_report)
-        .collect::<Vec<_>>();
+        .filter_map(|entry| entry.checkpoint.correction_of.clone())
+        .collect::<BTreeSet<_>>();
+    let report_checkpoints = effective_report_checkpoints(
+        checkpoints
+            .iter()
+            .filter_map(checkpoint_for_report)
+            .collect::<Vec<_>>(),
+        &corrected,
+    );
     let redacted_checkpoint_count = checkpoints
         .iter()
-        .filter(|entry| entry.checkpoint.confidentiality == "sensitive")
+        .filter(|entry| {
+            !corrected.contains(&entry.checkpoint.id)
+                && entry.checkpoint.confidentiality == "sensitive"
+        })
         .count();
     let excluded_checkpoint_count = checkpoints
         .iter()
-        .filter(|entry| entry.checkpoint.confidentiality == "restricted")
+        .filter(|entry| {
+            !corrected.contains(&entry.checkpoint.id)
+                && entry.checkpoint.confidentiality == "restricted"
+        })
         .count();
     let stats = weekly_report_stats(
+        &sources,
         &report_checkpoints,
         redacted_checkpoint_count,
         excluded_checkpoint_count,
@@ -1809,6 +1900,9 @@ mod tests {
         assert_eq!(preview.end_date, "2026-07-19");
         assert_eq!(preview.stats.work_item_count, 1);
         assert_eq!(preview.stats.checkpoint_count, 1);
+        assert_eq!(preview.stats.outcome_count, 1);
+        assert_eq!(preview.stats.current_risk_count, 1);
+        assert_eq!(preview.stats.current_next_step_count, 3);
         assert_eq!(preview.stats.git_commit_count, 1);
         assert_eq!(preview.stats.verification_count, 1);
         assert_eq!(preview.stats.passed_verification_count, 1);
@@ -1819,8 +1913,10 @@ mod tests {
         );
         assert!(markdown.contains("# 주간 성과보고서 · 2026-07-13 ~ 2026-07-19"));
         assert!(markdown.contains("jajak-front · 인증 시스템 개선"));
-        assert!(markdown.contains("커밋 `abc1234`"));
+        assert!(markdown.contains("abc1234"));
         assert!(markdown.contains("인증 갱신 기본 성공 경로 테스트"));
+        assert!(!markdown.contains("동시 요청 테스트 작성"));
+        assert!(markdown.contains("동시 401 응답 테스트 작성"));
         assert!(!directory.path().join(&preview.paths.report).exists());
 
         let result = create_weekly_report(
@@ -1836,6 +1932,81 @@ mod tests {
             fs::read_to_string(directory.path().join(&result.paths.report)).unwrap(),
             markdown.as_str()
         );
+    }
+
+    #[test]
+    fn weekly_report_uses_corrections_as_the_effective_checkpoint() {
+        let directory = tempdir().unwrap();
+        seed_examples(directory.path());
+        let source_path = directory
+            .path()
+            .join("records/2026/07/13/CP-20260713-001.json");
+        let mut correction: Value =
+            serde_json::from_str(&fs::read_to_string(&source_path).unwrap()).unwrap();
+        correction["id"] = Value::String("CP-20260714-002".to_string());
+        correction["kind"] = Value::String("correction".to_string());
+        correction["captured_at"] = Value::String("2026-07-14T18:10:00+09:00".to_string());
+        correction["work_period"]["start"] = Value::String("2026-07-14".to_string());
+        correction["work_period"]["end"] = Value::String("2026-07-14".to_string());
+        correction["title"] = Value::String("정정된 인증 결과".to_string());
+        correction["summary"] = Value::String("잘린 완료 사실을 정정했다.".to_string());
+        correction["outcomes"] = serde_json::json!([{
+            "description": "인증 복구 경로가 배포 브랜치에 반영됐다.",
+            "impact": "기존 탭의 역할 불일치를 안전하게 복구한다.",
+            "evidence_refs": ["AUTH-142"]
+        }]);
+        correction["correction_of"] = Value::String("CP-20260713-001".to_string());
+        let correction_path = directory
+            .path()
+            .join("records/2026/07/14/CP-20260714-002.json");
+        fs::create_dir_all(correction_path.parent().unwrap()).unwrap();
+        fs::write(
+            correction_path,
+            serde_json::to_string_pretty(&correction).unwrap(),
+        )
+        .unwrap();
+
+        let preview =
+            preview_weekly_report(directory.path(), weekly_input(), GENERATED_AT).unwrap();
+        let markdown = &preview.files[0].after;
+        assert_eq!(preview.stats.checkpoint_count, 1);
+        assert!(markdown.contains("인증 복구 경로가 배포 브랜치에 반영됐다."));
+        assert!(markdown.contains("영향: 기존 탭의 역할 불일치를 안전하게 복구한다."));
+        assert!(!markdown.contains("토큰 갱신 후 요청이 정상적으로 재시도되는 기본 동작"));
+    }
+
+    #[test]
+    fn restricted_correction_does_not_restore_the_superseded_original() {
+        let directory = tempdir().unwrap();
+        seed_examples(directory.path());
+        let source_path = directory
+            .path()
+            .join("records/2026/07/13/CP-20260713-001.json");
+        let mut correction: Value =
+            serde_json::from_str(&fs::read_to_string(&source_path).unwrap()).unwrap();
+        correction["id"] = Value::String("CP-20260714-002".to_string());
+        correction["kind"] = Value::String("correction".to_string());
+        correction["captured_at"] = Value::String("2026-07-14T18:10:00+09:00".to_string());
+        correction["work_period"]["start"] = Value::String("2026-07-14".to_string());
+        correction["work_period"]["end"] = Value::String("2026-07-14".to_string());
+        correction["confidentiality"] = Value::String("restricted".to_string());
+        correction["correction_of"] = Value::String("CP-20260713-001".to_string());
+        let correction_path = directory
+            .path()
+            .join("records/2026/07/14/CP-20260714-002.json");
+        fs::create_dir_all(correction_path.parent().unwrap()).unwrap();
+        fs::write(
+            correction_path,
+            serde_json::to_string_pretty(&correction).unwrap(),
+        )
+        .unwrap();
+
+        let preview =
+            preview_weekly_report(directory.path(), weekly_input(), GENERATED_AT).unwrap();
+        let markdown = &preview.files[0].after;
+        assert_eq!(preview.stats.checkpoint_count, 0);
+        assert_eq!(preview.stats.excluded_checkpoint_count, 1);
+        assert!(!markdown.contains("토큰 갱신 후 요청이 정상적으로 재시도되는 기본 동작"));
     }
 
     #[test]

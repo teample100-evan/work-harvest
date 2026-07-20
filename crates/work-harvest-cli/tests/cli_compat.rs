@@ -103,6 +103,14 @@ fn read_commands_match_node_cli_byte_for_byte_on_examples() {
         vec!["work-item", "list", "--root", "examples", "--json"],
         vec![
             "work-item",
+            "list",
+            "--compact",
+            "--root",
+            "examples",
+            "--json",
+        ],
+        vec![
+            "work-item",
             "show",
             "AUTH-142",
             "--root",
@@ -110,8 +118,26 @@ fn read_commands_match_node_cli_byte_for_byte_on_examples() {
             "--json",
         ],
         vec![
+            "work-item",
+            "show",
+            "AUTH-142",
+            "--compact",
+            "--root",
+            "examples",
+            "--json",
+        ],
+        vec![
             "checkpoint",
             "last",
+            "--work-item",
+            "AUTH-142",
+            "--root",
+            "examples",
+            "--json",
+        ],
+        vec![
+            "checkpoint",
+            "boundary",
             "--work-item",
             "AUTH-142",
             "--root",
@@ -185,6 +211,46 @@ fn rust_cli_runs_the_complete_write_and_report_flow() {
     let captured: Value = serde_json::from_slice(&captured.stdout).unwrap();
     assert_eq!(captured["checkpoint"]["id"], "CP-20260713-001");
     assert_eq!(captured.as_object().unwrap().len(), 4);
+
+    let compact_checkpoint = serde_json::to_vec(&checkpoint_input()).unwrap();
+    let compact_root = tempdir().unwrap();
+    let compact_root_path = compact_root.path().to_str().unwrap();
+    let compact_work_item = serde_json::to_vec(&work_item_input()).unwrap();
+    let compact_created = rust_cli(
+        &[
+            "work-item",
+            "create",
+            "--input",
+            "-",
+            "--root",
+            compact_root_path,
+            "--json",
+        ],
+        Some(&compact_work_item),
+    );
+    assert!(compact_created.status.success());
+    let compact_captured = rust_cli(
+        &[
+            "checkpoint",
+            "capture",
+            "--input",
+            "-",
+            "--compact",
+            "--root",
+            compact_root_path,
+            "--json",
+        ],
+        Some(&compact_checkpoint),
+    );
+    assert!(
+        compact_captured.status.success(),
+        "{}",
+        String::from_utf8_lossy(&compact_captured.stderr)
+    );
+    let compact_captured: Value = serde_json::from_slice(&compact_captured.stdout).unwrap();
+    assert_eq!(compact_captured["checkpoint"]["id"], "CP-20260713-001");
+    assert!(compact_captured["checkpoint"].get("activities").is_none());
+    assert!(compact_captured["context"].get("current_state").is_none());
 
     let shown = rust_cli(
         &["work-item", "show", "AUTH-142", "--root", root, "--json"],

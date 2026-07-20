@@ -46,16 +46,23 @@ Do not add a new schema field to represent these situations. Express them with `
 
 ### 2. Find the work item before creating one
 
-Run:
+If this Codex task already established a work item ID during an earlier successful capture, reuse
+that ID. Do not list or show work items again unless the objective changed, the user selected a
+different work item, or current evidence makes the prior match doubtful.
+
+For the first capture in a task, run the compact index:
 
 ```bash
-<skill-dir>/scripts/wh work-item list --json
+<skill-dir>/scripts/wh work-item list --compact --json
 ```
+
+Add `--project <id>` when the current repository or task establishes the project ID reliably. Use
+the unfiltered index only when the project boundary is genuinely unknown.
 
 Match candidates using project, objective, intended outcome, initiative, repository, issue or PR, and current state. Treat a branch or session as supporting context, not as the work item identity. Then inspect the best candidate:
 
 ```bash
-<skill-dir>/scripts/wh work-item show <id> --json
+<skill-dir>/scripts/wh work-item show <id> --compact --json
 ```
 
 - Reuse a work item only when the match is clear.
@@ -71,13 +78,17 @@ Read [references/payloads.md](references/payloads.md) before creating a work ite
 
 ### 3. Establish the checkpoint boundary
 
-Run:
+The compact `work-item show` result already contains the last checkpoint boundary. After reusing a
+work item ID in a later capture, run only:
 
 ```bash
-<skill-dir>/scripts/wh checkpoint last --work-item <id> --json
+<skill-dir>/scripts/wh checkpoint boundary --work-item <id> --json
 ```
 
-Record only the delta after that checkpoint. Use its `captured_at`, Git refs, evidence, and current context as boundary evidence. Do not summarize the entire task again.
+Record only the delta after that checkpoint. Use its ID, `captured_at`, work period, Git refs, and
+the compact work item context as boundary evidence. Do not load the checkpoint body unless a
+specific factual ambiguity cannot be resolved from the current task, repository, boundary, and
+context. Do not summarize the entire task again.
 
 If there is no prior checkpoint, record the current task scope. If the user requests a date range that cannot be reconstructed reliably, use `precision: range` or `unknown`; never invent daily boundaries.
 
@@ -93,6 +104,20 @@ Use the current conversation and safe read-only repository checks to confirm:
 
 Treat code and current Git state as stronger evidence than remembered conversation context. Do not claim an unexecuted verification passed. Do not copy full transcripts, full diffs, secrets, environment variables, or sensitive command output into the record.
 
+Classify confidentiality before preparing the payload:
+
+- `normal`: safe to include with full evidence for the intended report audience.
+- `sensitive`: keep locally, but omit commands, files, URLs, Git details, decisions, and evidence
+  references from derived reports. Prefer this when private repository, account, local path,
+  internal issue, or environment details are useful to preserve but unnecessary to share.
+- `restricted`: exclude from derived reports and notifications. Use for secrets, credentials,
+  personal or customer data, access-control details, or other content that should only appear when
+  the user explicitly opens the local record.
+
+When uncertain between `normal` and `sensitive`, use `sensitive`. Never lower a recent
+confidentiality level without user direction or clear evidence that the new delta is safe for the
+broader audience.
+
 For retrospectively described work:
 
 - Treat the user's statement as a valid record source, but not as independent verification.
@@ -106,7 +131,7 @@ For non-code work, look for deliverables such as documents, decisions, meeting n
 
 ### 5. Prepare the payload
 
-Create a JSON or YAML object following [references/payloads.md](references/payloads.md).
+Create a JSON object following [references/payloads.md](references/payloads.md).
 
 For `context_update`:
 
@@ -114,15 +139,29 @@ For `context_update`:
 - Omit fields that should remain unchanged.
 - Send `[]` only when the current list should be cleared.
 - Keep only current decisions, files, verification state, next steps, and risks—not historical narration.
+- Keep the handoff compact: current state 3–5 sentences, up to 5 active decisions, 8 key files, 5
+  representative completed verifications, 3 pending verifications, 5 next steps, and 3 current
+  risks. These are working budgets rather than reasons to omit a materially important fact.
+
+For the checkpoint delta:
+
+- Prefer a one-sentence summary, 1–3 outcomes, 0–2 material decisions, and distinct verification
+  gates rather than every repeated command invocation.
+- Do not copy unchanged context next steps, context files, or the previous Git commit into the new
+  checkpoint evidence.
+- Keep resolved experiments and transient failures out unless they changed a decision, explain a
+  remaining risk, or are necessary to understand the result.
 
 For `final`, include at least one confirmed outcome. If completion or its evidence is uncertain, use `progress` and state what remains.
 
 ### 6. Capture and validate
 
-Pass the payload through a safely created file or stdin. Do not interpolate JSON into a shell command.
+Pass the JSON payload through a safely created file or stdin. Do not interpolate JSON into a shell
+command. Do not generate YAML for capture payloads; unquoted `#` characters can be interpreted as
+comments and truncate factual text.
 
 ```bash
-<skill-dir>/scripts/wh checkpoint capture --input <file|-> --json
+<skill-dir>/scripts/wh checkpoint capture --compact --input <file|-> --json
 <skill-dir>/scripts/wh validate --json
 ```
 
@@ -138,6 +177,10 @@ Return a compact confirmation containing:
 - JSON and Markdown record paths
 - Whether handoff context was refreshed
 - Any unverified claim, blocker, or follow-up the user should know
+
+Do not print the checkpoint body, context body, full validation dataset, or full work item after a
+successful capture. Remember the confirmed work item ID and new checkpoint boundary for the next
+capture in the same Codex task.
 
 Do not turn the confirmation into a weekly report.
 

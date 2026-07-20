@@ -95,23 +95,25 @@ context:
 ## `work-item list`
 
 ```bash
-pnpm wh work-item list [--project <id>] [--status <status>] [--root <path>] [--json]
+pnpm wh work-item list [--project <id>] [--status <status>] [--compact] [--root <path>] [--json]
 ```
 
 업무 항목을 최근 갱신 순서로 출력한다. 에이전트는 새 업무를 만들기 전에 이 명령으로 기존 업무 항목 후보를 확인한다.
+`--compact`는 현재 상태와 다음 작업을 생략하고 ID·제목·상태·마지막 체크포인트 ID만 반환해 에이전트 조회 컨텍스트를 줄인다.
 
 ## `work-item show`
 
 ```bash
-pnpm wh work-item show <id> [--root <path>] [--json]
+pnpm wh work-item show <id> [--compact] [--root <path>] [--json]
 ```
 
 업무 메타데이터, 현재 context와 마지막 체크포인트를 함께 출력한다. 새 세션을 시작할 때 사용할 기본 조회 명령이다.
+`--compact`는 업무 목표와 현재 context는 유지하되 마지막 체크포인트 전문을 경계 정보로 교체한다.
 
 ## `checkpoint capture`
 
 ```bash
-pnpm wh checkpoint capture --input <file|-> [--root <path>] [--json]
+pnpm wh checkpoint capture --input <file|-> [--compact] [--root <path>] [--json]
 ```
 
 필수 입력:
@@ -178,6 +180,8 @@ context_update:
 
 `context_update`는 전달된 필드만 교체한다. 전달하지 않은 결정, 파일, 검증, 다음 작업과 리스크는 기존 값을 유지한다. 배열을 비우려면 명시적으로 빈 배열을 전달한다.
 
+`--compact`는 저장 성공 시 체크포인트·업무·Context 전문 대신 식별자, 상태, 갱신 시각과 경로만 반환한다. 에이전트가 반복 체크포인트를 남길 때 사용하는 기본 출력 방식이다.
+
 ## `checkpoint last`
 
 ```bash
@@ -185,6 +189,14 @@ pnpm wh checkpoint last --work-item <id> [--root <path>] [--json]
 ```
 
 지정 업무 항목의 가장 최근 체크포인트를 반환한다. 에이전트는 이를 이용해 “지난 체크포인트 이후”의 기록 범위를 정한다.
+
+## `checkpoint boundary`
+
+```bash
+pnpm wh checkpoint boundary --work-item <id> [--root <path>] [--json]
+```
+
+가장 최근 체크포인트의 ID, 생성 시각, 작업 기간, 상태, Git 기준점과 파일 경로만 반환한다. 체크포인트 전문을 컨텍스트에 적재하지 않고 증분 기록의 경계를 정할 때 사용한다.
 
 ## `report performance-note`
 

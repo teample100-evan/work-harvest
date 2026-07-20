@@ -129,12 +129,20 @@ export function WeeklyReportEditor({
   }
 
   const stats = preview?.stats;
+  const unresolvedVerificationCount = stats
+    ? stats.failed_verification_count +
+      stats.partial_verification_count +
+      stats.not_run_verification_count
+    : 0;
   const previewStatus = stats
     ? [
         `업무 ${stats.work_item_count}개`,
-        `기록 ${stats.checkpoint_count}개`,
-        `Git 커밋 ${stats.git_commit_count}개`,
-        `검증 ${stats.verification_count}개`,
+        `핵심 결과 후보 ${stats.outcome_count}개`,
+        `현재 리스크 ${stats.current_risk_count}개`,
+        `다음 작업 ${stats.current_next_step_count}개`,
+        unresolvedVerificationCount > 0
+          ? `확인 필요 검증 ${unresolvedVerificationCount}개`
+          : "검증 이상 없음",
         preview.replaces_existing ? "기존 보고서 덮어쓰기" : "새 보고서 생성",
         stats.redacted_checkpoint_count > 0
           ? `민감 ${stats.redacted_checkpoint_count}개 세부 정보 생략`
@@ -215,10 +223,10 @@ export function WeeklyReportEditor({
                 <span className="editor-preserved">기존 보고서는 변경 비교 후 확인합니다</span>
               </div>
               <p className="editor-helper">
-                실제 작업 기간이 선택 범위와 겹치는 체크포인트를 업무별로 묶습니다. Git 커밋과 테스트·빌드·lint·수동 검증 결과도 기록에서 자동 집계합니다.
+                실제 작업 기간이 선택 범위와 겹치는 체크포인트에서 업무별 핵심 결과와 영향을 선별합니다. 현재 Context의 리스크와 다음 작업만 본문에 반영합니다.
               </p>
               <p className="editor-policy-note">
-                같은 경로의 보고서가 있으면 기존 내용과 새 초안을 비교한 뒤 덮어쓸지 묻습니다. 앱이 테스트를 임의로 실행하지는 않습니다.
+                Git·명령·파일·상세 검증은 근거 부록으로 분리합니다. 같은 경로의 보고서가 있으면 기존 내용과 새 초안을 비교한 뒤 덮어쓸지 묻습니다.
               </p>
               <div className="editor-grid">
                 <label className="editor-field">

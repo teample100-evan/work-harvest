@@ -118,14 +118,14 @@ pub struct StoredContextFile {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ContextVerificationInput {
-    pub completed: Option<Vec<String>>,
-    pub pending: Option<Vec<String>>,
+    pub completed: Option<Vec<Value>>,
+    pub pending: Option<Vec<Value>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct StoredContextVerification {
-    pub completed: Vec<String>,
-    pub pending: Vec<String>,
+    pub completed: Vec<Value>,
+    pub pending: Vec<Value>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -153,8 +153,8 @@ pub struct WorkContextInput {
     pub decisions: Option<Vec<String>>,
     pub files: Option<Vec<ContextFileInput>>,
     pub verification: Option<ContextVerificationInput>,
-    pub verification_completed: Option<Vec<String>>,
-    pub verification_pending: Option<Vec<String>>,
+    pub verification_completed: Option<Vec<Value>>,
+    pub verification_pending: Option<Vec<Value>>,
     pub next_steps: Option<Vec<String>>,
     pub risks: Option<Vec<String>>,
     pub git: Option<ContextGitInput>,
@@ -489,6 +489,39 @@ fn bullets(values: &[String], fallback: &str) -> String {
     }
 }
 
+fn verification_bullets(values: &[Value], fallback: &str) -> String {
+    if values.is_empty() {
+        return format!("- {fallback}");
+    }
+    values
+        .iter()
+        .map(|value| match value {
+            Value::String(value) => format!("- {value}"),
+            Value::Object(fields) => {
+                let description = fields
+                    .get("description")
+                    .and_then(Value::as_str)
+                    .unwrap_or("검증 설명 없음");
+                let status = fields
+                    .get("status")
+                    .and_then(Value::as_str)
+                    .unwrap_or("unknown");
+                let method = fields
+                    .get("method")
+                    .and_then(Value::as_str)
+                    .unwrap_or("unknown");
+                let source = fields
+                    .get("source_ref")
+                    .and_then(Value::as_str)
+                    .unwrap_or("없음");
+                format!("- {description} ({status}, {method}; 출처: {source})")
+            }
+            _ => "- 잘못된 검증 항목".to_string(),
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 fn file_bullets(values: &[StoredContextFile]) -> String {
     if values.is_empty() {
         return "- 아직 지정하지 않음".to_string();
@@ -565,8 +598,8 @@ last_verified_git_ref: {}\n\
         context.current_state,
         bullets(&context.decisions, "아직 확정된 결정 없음"),
         file_bullets(&context.files),
-        bullets(&context.verification.completed, "완료된 검증 없음"),
-        bullets(&context.verification.pending, "예정된 검증 없음"),
+        verification_bullets(&context.verification.completed, "완료된 검증 없음"),
+        verification_bullets(&context.verification.pending, "예정된 검증 없음"),
         bullets(&context.next_steps, "다음 작업을 구체화해야 함"),
         bullets(&context.risks, "현재 확인된 리스크 없음"),
         git_value(context.git.repository.as_deref()),
@@ -948,6 +981,8 @@ fn apply_update(
     patch: WorkItemUpdatePatch,
     now: &str,
 ) -> Result<(WorkItemDocument, WorkContextDocument), WorkItemWriteError> {
+    work_item.schema_version = "1.1".to_string();
+    context.schema_version = "1.1".to_string();
     if let Some(value) = patch.title {
         work_item.title = value;
     }
@@ -1347,8 +1382,8 @@ mod tests {
                     },
                 ]),
                 verification: Some(ContextVerificationInput {
-                    completed: Some(vec!["기존 테스트 통과".to_string()]),
-                    pending: Some(vec!["동시 요청 테스트".to_string()]),
+                    completed: Some(vec![json!("기존 테스트 통과")]),
+                    pending: Some(vec![json!("동시 요청 테스트")]),
                 }),
                 next_steps: Some(vec!["기본 성공 경로 테스트 작성".to_string()]),
                 risks: Some(vec!["중복 refresh 요청".to_string()]),
@@ -1437,8 +1472,8 @@ process.stdout.write(JSON.stringify({
         defaults_and_completion.links = None;
         defaults_and_completion.completed_at = None;
         defaults_and_completion.context = Some(WorkContextInput {
-            verification_completed: Some(vec!["문서 링크 확인".to_string()]),
-            verification_pending: Some(vec!["동료 검토".to_string()]),
+            verification_completed: Some(vec![json!("문서 링크 확인")]),
+            verification_pending: Some(vec![json!("동료 검토")]),
             files: Some(vec![ContextFileInput::Path("docs/release.md".to_string())]),
             ..WorkContextInput::default()
         });
@@ -1507,7 +1542,7 @@ process.stdout.write(JSON.stringify({
             context: Some(WorkContextPatch {
                 current_state: Some("동시 요청 검증까지 완료했다.".to_string()),
                 verification: Some(ContextVerificationInput {
-                    completed: Some(vec!["동시 요청 테스트 통과".to_string()]),
+                    completed: Some(vec![json!("동시 요청 테스트 통과")]),
                     pending: Some(Vec::new()),
                 }),
                 ..WorkContextPatch::default()

@@ -11,6 +11,7 @@ changed. Store only the stable, report-relevant facts in `work_item.problem`:
 - the exact user-visible or operational symptom;
 - expected and actual behavior;
 - affected users or surfaces;
+- exact limits, counts, or a compact reproduction example when those numbers explain the failure;
 - compact references to the evidence source.
 
 Keep the stable identity in `external_refs`. Never copy the entire issue description, comments,
@@ -38,7 +39,9 @@ Every new outcome should set both `category` and `reporting`.
 | `delivery`, `operation` | usually `supporting` |
 | `record_maintenance` | `excluded` |
 
-A primary outcome states the result and its impact. PR creation, merge, branch synchronization,
+A primary outcome states the result and its impact. Store impact as an object and distinguish
+`expected`, `observed`, `measured`, and `user_reported` impact. Do not describe an expected effect
+as already realized while QA or release remains. PR creation, merge, branch synchronization,
 build installation, and record correction are delivery or maintenance evidence unless they solve
 an independent organizational problem.
 
@@ -63,6 +66,10 @@ Before capture, reject or correct these quality failures:
 - a primary delivery or record-maintenance outcome;
 - a primary outcome with no meaningful impact;
 - an external state without its observation time.
+
+Refresh `context_update.lifecycle` whenever completion or external state changes. Preserve
+verification provenance in Context objects instead of flattening external evidence into an
+unqualified “passed” sentence.
 
 ## Example: implementation merged, QA pending
 

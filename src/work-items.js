@@ -116,6 +116,18 @@ function bullets(values, fallback) {
     : `- ${fallback}`;
 }
 
+function verificationBullets(values, fallback) {
+  return values.length
+    ? values
+        .map((value) => {
+          if (typeof value === "string") return `- ${value}`;
+          const source = value.source_ref ?? "없음";
+          return `- ${value.description} (${value.status}, ${value.method}; 출처: ${source})`;
+        })
+        .join("\n")
+    : `- ${fallback}`;
+}
+
 function renderFileBullets(values) {
   return values.length
     ? values
@@ -165,11 +177,11 @@ ${renderFileBullets(context.files)}
 
 ### 완료
 
-${bullets(context.verification.completed, "완료된 검증 없음")}
+${verificationBullets(context.verification.completed, "완료된 검증 없음")}
 
 ### 미완료
 
-${bullets(context.verification.pending, "예정된 검증 없음")}
+${verificationBullets(context.verification.pending, "예정된 검증 없음")}
 
 ## 남은 작업
 

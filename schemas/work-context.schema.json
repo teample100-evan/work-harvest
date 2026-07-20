@@ -73,11 +73,21 @@
       "properties": {
         "completed": {
           "type": "array",
-          "items": { "$ref": "./common.schema.json#/$defs/nonEmptyString" }
+          "items": {
+            "oneOf": [
+              { "$ref": "./common.schema.json#/$defs/nonEmptyString" },
+              { "$ref": "./common.schema.json#/$defs/contextVerification" }
+            ]
+          }
         },
         "pending": {
           "type": "array",
-          "items": { "$ref": "./common.schema.json#/$defs/nonEmptyString" }
+          "items": {
+            "oneOf": [
+              { "$ref": "./common.schema.json#/$defs/nonEmptyString" },
+              { "$ref": "./common.schema.json#/$defs/contextVerification" }
+            ]
+          }
         }
       }
     },

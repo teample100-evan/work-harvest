@@ -207,6 +207,23 @@
           "enum": ["source", "delivery", "evidence", "related"]
         }
       }
+    },
+    "contextVerification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["description", "status", "method", "source_ref", "observed_at"],
+      "properties": {
+        "description": { "$ref": "#/$defs/nonEmptyString" },
+        "status": { "type": "string", "enum": ["passed", "failed", "partial", "not_run"] },
+        "method": { "type": "string", "enum": ["command", "artifact", "manual", "external"] },
+        "source_ref": { "type": ["string", "null"] },
+        "observed_at": {
+          "oneOf": [
+            { "$ref": "#/$defs/timestamp" },
+            { "type": "null" }
+          ]
+        }
+      }
     }
   }
 }

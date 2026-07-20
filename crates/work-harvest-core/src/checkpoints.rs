@@ -114,7 +114,7 @@ pub struct CheckpointVerificationDocument {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CheckpointOutcomeDocument {
     pub description: String,
-    pub impact: Option<String>,
+    pub impact: Option<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub category: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -434,6 +434,7 @@ fn updated_work_item(
     mut work_item: WorkItemDocument,
     checkpoint: &CheckpointDocument,
 ) -> WorkItemDocument {
+    work_item.schema_version = "1.1".to_string();
     work_item.status = checkpoint.status_after.clone();
     work_item.updated_at = checkpoint.captured_at.clone();
     work_item.completed_at = if checkpoint.status_after == "completed" {
@@ -449,6 +450,7 @@ fn merged_context(
     update: Option<CheckpointContextUpdate>,
     checkpoint: &CheckpointDocument,
 ) -> WorkContextDocument {
+    context.schema_version = "1.1".to_string();
     context.updated_at = checkpoint.captured_at.clone();
     context.last_checkpoint_id = Some(checkpoint.id.clone());
     if let Some(git) = checkpoint.git.as_ref() {
@@ -477,10 +479,10 @@ fn merged_context(
         context.files = normalize_files(Some(value));
     }
     if let Some(value) = update.verification_completed {
-        context.verification.completed = value;
+        context.verification.completed = value.into_iter().map(Value::String).collect();
     }
     if let Some(value) = update.verification_pending {
-        context.verification.pending = value;
+        context.verification.pending = value.into_iter().map(Value::String).collect();
     }
     if let Some(verification) = update.verification {
         if let Some(value) = verification.completed {
@@ -639,7 +641,11 @@ pub fn render_checkpoint(checkpoint: &CheckpointDocument) -> String {
                 format!(
                     "- {}\n  - 영향: {}\n  - 근거: {}",
                     value.description,
-                    value.impact.as_deref().unwrap_or("확인되지 않음"),
+                    value
+                        .impact
+                        .as_ref()
+                        .map(render_impact)
+                        .unwrap_or_else(|| "확인되지 않음".to_string()),
                     if value.evidence_refs.is_empty() {
                         "없음".to_string()
                     } else {
@@ -741,6 +747,28 @@ pub fn render_checkpoint(checkpoint: &CheckpointDocument) -> String {
         markdown_list(&checkpoint.blockers, "없음"),
         markdown_list(&checkpoint.next_steps, "없음"),
     )
+}
+
+fn render_impact(value: &Value) -> String {
+    match value {
+        Value::String(value) => value.clone(),
+        Value::Object(fields) => {
+            let description = fields
+                .get("description")
+                .and_then(Value::as_str)
+                .unwrap_or("영향 설명 없음");
+            let status = fields
+                .get("status")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown");
+            let basis = fields
+                .get("basis")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown");
+            format!("{description} ({status}; 근거: {basis})")
+        }
+        _ => "확인되지 않음".to_string(),
+    }
 }
 
 fn checkpoint_paths(
@@ -1072,8 +1100,8 @@ mod tests {
             context_update: Some(CheckpointContextUpdate {
                 current_state: Some("기본 성공 경로를 검증했다.".to_string()),
                 verification: Some(ContextVerificationInput {
-                    completed: Some(vec!["인증 테스트 통과".to_string()]),
-                    pending: Some(vec!["동시 요청 테스트".to_string()]),
+                    completed: Some(vec![serde_json::json!("인증 테스트 통과")]),
+                    pending: Some(vec![serde_json::json!("동시 요청 테스트")]),
                 }),
                 next_steps: Some(vec!["동시 요청 테스트".to_string()]),
                 ..CheckpointContextUpdate::default()
@@ -1193,8 +1221,8 @@ mod tests {
         let directory = tempdir().unwrap();
         let mut work_item = work_item_input();
         work_item.context.as_mut().unwrap().verification = Some(ContextVerificationInput {
-            completed: Some(vec!["이전 검증".to_string()]),
-            pending: Some(vec!["이전 대기".to_string()]),
+            completed: Some(vec![serde_json::json!("이전 검증")]),
+            pending: Some(vec![serde_json::json!("이전 대기")]),
         });
         work_item.context.as_mut().unwrap().git = Some(crate::work_items::ContextGitInput {
             repository: Some("work-harvest".to_string()),
@@ -1208,8 +1236,8 @@ mod tests {
             verification_completed: Some(vec!["legacy 완료".to_string()]),
             verification_pending: Some(vec!["legacy 대기".to_string()]),
             verification: Some(ContextVerificationInput {
-                completed: Some(vec!["중첩 완료".to_string()]),
-                pending: Some(vec!["중첩 대기".to_string()]),
+                completed: Some(vec![serde_json::json!("중첩 완료")]),
+                pending: Some(vec![serde_json::json!("중첩 대기")]),
             }),
             git: Some(CheckpointContextGitUpdate {
                 branch: Some(None),

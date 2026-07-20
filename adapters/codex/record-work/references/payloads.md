@@ -19,6 +19,7 @@ problem:
   statement: 토큰 만료 뒤 원 요청이 안전하게 재시도되는지 보장할 근거가 부족하다.
   expected_behavior: 갱신 성공 뒤 원 요청을 한 번만 재시도한다.
   actual_behavior: 자동화된 회귀 검증이 없다.
+  observed_example: 동시 인증 실패 시 갱신 요청 횟수와 원 요청 재시도 횟수를 확인할 테스트가 없다.
   affected_surfaces:
     - 인증이 필요한 API 요청
   source_refs:
@@ -118,7 +119,10 @@ verifications:
       - tests/auth/refresh-token.test.ts
 outcomes:
   - description: 갱신 후 원 요청이 정상적으로 재시도되는 동작을 검증했다.
-    impact: 인증 만료 시 사용자의 요청이 불필요하게 실패하는 회귀를 자동으로 탐지할 수 있다.
+    impact:
+      description: 인증 만료 시 사용자의 요청이 불필요하게 실패하는 회귀를 자동으로 탐지할 수 있다.
+      status: observed
+      basis: 자동화 테스트 통과
     category: quality
     reporting: primary
     evidence_refs:
@@ -151,12 +155,24 @@ context_update:
       description: 인증 갱신 테스트
   verification:
     completed:
-      - 인증 갱신 기본 성공 경로 테스트 통과
+      - description: 인증 갱신 기본 성공 경로 테스트
+        status: passed
+        method: command
+        source_ref: command:pnpm-test-auth
+        observed_at: 2026-07-13T18:10:00+09:00
     pending:
       - 동시 요청 테스트
   next_steps:
     - 동시 요청 테스트 작성
   risks: []
+  lifecycle:
+    target_gate: qa
+    current_gate: development
+    external_state: In Progress
+    remaining_gates:
+      - review
+      - qa
+    observed_at: 2026-07-13T18:10:00+09:00
 ```
 
 ## Final checkpoint
@@ -181,7 +197,10 @@ verifications:
       - tests/auth/refresh-token.test.ts
 outcomes:
   - description: 계획한 인증 갱신 시나리오가 자동화된 테스트로 검증됐다.
-    impact: 인증 갱신 회귀를 배포 전에 탐지할 수 있다.
+    impact:
+      description: 인증 갱신 회귀를 배포 전에 탐지할 수 있다.
+      status: observed
+      basis: 전체 인증 테스트 통과
     category: quality
     reporting: primary
     evidence_refs:

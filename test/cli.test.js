@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
@@ -473,6 +473,7 @@ test("QA-pending delivery is recorded as a milestone with report-quality context
       statement: "조건을 충족한 것으로 표시되지만 게시가 거절된다.",
       expected_behavior: "본문이 3문단 이하이면 게시할 수 있어야 한다.",
       actual_behavior: "화면은 3문단으로 세지만 서버에는 빈 문단을 포함한 5개 p 태그가 전달된다.",
+      observed_example: "10자·3문단 제한에서 화면은 9자·3문단으로 표시했지만 실제 HTML에는 p 태그가 5개였다.",
       affected_surfaces: ["선생님 게시글 작성·수정"],
       source_refs: ["linear:JAK-295"],
     };
@@ -493,6 +494,21 @@ test("QA-pending delivery is recorded as a milestone with report-quality context
     );
     assert.equal(created.status, 0, created.stderr);
     assert.equal(JSON.parse(created.stdout).work_item.schema_version, "1.1");
+
+    for (const name of ["work-item.json", "context.json"]) {
+      const filePath = path.join(root, "work-items", "JAK-295", name);
+      const legacy = JSON.parse(readFileSync(filePath, "utf8"));
+      legacy.schema_version = "1.0";
+      writeFileSync(filePath, `${JSON.stringify(legacy, null, 2)}\n`);
+    }
+    const contextMarkdownPath = path.join(root, "work-items", "JAK-295", "context.md");
+    writeFileSync(
+      contextMarkdownPath,
+      readFileSync(contextMarkdownPath, "utf8").replace(
+        'schema_version: "1.1"',
+        'schema_version: "1.0"',
+      ),
+    );
 
     const milestone = checkpointPayload();
     milestone.id = "CP-20260720-JAK295";
@@ -516,7 +532,11 @@ test("QA-pending delivery is recorded as a milestone with report-quality context
     milestone.outcomes = [
       {
         description: "빈 문단 때문에 게시가 거절되는 문제를 해결했다.",
-        impact: "화면의 문단 조건과 서버 검증 결과가 일치한다.",
+        impact: {
+          description: "화면의 문단 조건과 서버 검증 결과가 일치한다.",
+          status: "expected",
+          basis: "구현 및 자동화 테스트",
+        },
         category: "user_impact",
         reporting: "primary",
         evidence_refs: ["linear:JAK-295"],
@@ -529,6 +549,20 @@ test("QA-pending delivery is recorded as a milestone with report-quality context
         evidence_refs: ["pull-request:3"],
       },
     ];
+    milestone.context_update.lifecycle = {
+      target_gate: "qa",
+      current_gate: "review",
+      external_state: "QA Pending",
+      remaining_gates: ["qa"],
+      observed_at: "2026-07-20T11:47:00+09:00",
+    };
+    milestone.context_update.verification.completed = [{
+      description: "인증 테스트",
+      status: "passed",
+      method: "command",
+      source_ref: "command:pnpm-test-auth",
+      observed_at: "2026-07-20T11:40:00+09:00",
+    }];
     const captured = run(
       ["checkpoint", "capture", "--input", "-", "--root", root, "--json"],
       milestone,
@@ -538,6 +572,10 @@ test("QA-pending delivery is recorded as a milestone with report-quality context
     assert.equal(result.checkpoint.kind, "milestone");
     assert.equal(result.checkpoint.status_after, "in_progress");
     assert.equal(result.work_item.status, "in_progress");
+    assert.equal(result.work_item.schema_version, "1.1");
+    assert.equal(result.context.schema_version, "1.1");
+    assert.equal(result.context.lifecycle.external_state, "QA Pending");
+    assert.equal(result.context.verification.completed[0].method, "command");
     assert.equal(result.checkpoint.external_states[0].state, "QA Pending");
     assert.deepEqual(result.checkpoint.completion.remaining_gates, ["qa"]);
   } finally {

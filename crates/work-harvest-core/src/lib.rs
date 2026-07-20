@@ -1151,6 +1151,7 @@ impl DataRootIndex {
         checkpoint_files.sort_by_key(|(path, _)| *path);
 
         let mut contexts = HashMap::new();
+        let mut context_versions = HashMap::new();
         for (path, document) in &context_files {
             if let Some(value) = &document.value {
                 validate_document(
@@ -1160,6 +1161,12 @@ impl DataRootIndex {
                     value,
                     &mut issues,
                 );
+                if let (Some(work_item_id), Some(version)) = (
+                    value.get("work_item_id").and_then(Value::as_str),
+                    value.get("schema_version").and_then(Value::as_str),
+                ) {
+                    context_versions.insert(work_item_id.to_string(), version.to_string());
+                }
                 contexts.insert((*path).clone(), value.clone());
             }
         }
@@ -1167,6 +1174,7 @@ impl DataRootIndex {
         let mut work_items = Vec::new();
         let mut work_item_ids = HashSet::new();
         let mut work_item_projects = HashMap::new();
+        let mut work_item_versions = HashMap::new();
         for (path, document) in &work_item_files {
             let Some(value) = &document.value else {
                 continue;
@@ -1183,6 +1191,24 @@ impl DataRootIndex {
                     ));
                 }
                 work_item_projects.insert(summary.id.clone(), summary.project_id.clone());
+                let version = value
+                    .get("schema_version")
+                    .and_then(Value::as_str)
+                    .unwrap_or("unknown")
+                    .to_string();
+                if version == "1.0"
+                    && ["problem", "external_refs", "completion"]
+                        .iter()
+                        .any(|field| value.get(field).is_some())
+                {
+                    issues.push(warning(
+                        &self.root,
+                        path,
+                        "legacy_version_with_v1_1_fields",
+                        "1.1 필드를 가진 업무 항목의 schema_version이 1.0입니다.",
+                    ));
+                }
+                work_item_versions.insert(summary.id.clone(), version);
                 work_items.push(summary);
             }
         }
@@ -1227,6 +1253,24 @@ impl DataRootIndex {
                 checkpoint_confidentiality.insert(checkpoint_id, confidentiality.clone());
             }
             if let Some(work_item_id) = work_item_id {
+                if value.get("schema_version").and_then(Value::as_str) == Some("1.1") {
+                    if work_item_versions.get(&work_item_id).map(String::as_str) != Some("1.1") {
+                        issues.push(warning(
+                            &self.root,
+                            path,
+                            "checkpoint_work_item_version_mismatch",
+                            format!("1.1 체크포인트의 업무 항목 {work_item_id}이 1.1이 아닙니다."),
+                        ));
+                    }
+                    if context_versions.get(&work_item_id).map(String::as_str) != Some("1.1") {
+                        issues.push(warning(
+                            &self.root,
+                            path,
+                            "checkpoint_context_version_mismatch",
+                            format!("1.1 체크포인트의 Context {work_item_id}이 1.1이 아닙니다."),
+                        ));
+                    }
+                }
                 activity_dates_by_work_item
                     .entry(work_item_id.clone())
                     .or_default()

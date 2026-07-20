@@ -858,7 +858,16 @@ fn weekly_report_stats(
         checkpoint_count: checkpoints.len(),
         outcome_count: checkpoints
             .iter()
-            .map(|entry| entry.checkpoint.outcomes.len())
+            .map(|entry| {
+                entry
+                    .checkpoint
+                    .outcomes
+                    .iter()
+                    .filter(|outcome| {
+                        outcome.reporting.as_deref().unwrap_or("primary") == "primary"
+                    })
+                    .count()
+            })
             .sum(),
         current_risk_count: risks.len(),
         current_next_step_count: next_steps.len(),
@@ -932,9 +941,26 @@ fn weekly_work_item_sections(
                 .flat_map(|entry| entry.checkpoint.outcomes.iter().rev())
                 .filter(|outcome| outcome.reporting.as_deref().unwrap_or("primary") == "primary")
             {
-                let rendered = outcome.impact.as_deref().map_or_else(
+                let rendered = outcome.impact.as_ref().map_or_else(
                     || outcome.description.clone(),
-                    |impact| format!("{} — 영향: {impact}", outcome.description),
+                    |impact| {
+                        let impact = match impact {
+                            Value::String(value) => value.clone(),
+                            Value::Object(fields) => {
+                                let description = fields
+                                    .get("description")
+                                    .and_then(Value::as_str)
+                                    .unwrap_or("영향 설명 없음");
+                                let status = fields
+                                    .get("status")
+                                    .and_then(Value::as_str)
+                                    .unwrap_or("unknown");
+                                format!("{description} [{status}]")
+                            }
+                            _ => "확인되지 않음".to_string(),
+                        };
+                        format!("{} — 영향: {impact}", outcome.description)
+                    },
                 );
                 if seen.insert(rendered.clone()) {
                     outcomes.push(rendered);

@@ -52,6 +52,7 @@
         "statement": { "$ref": "./common.schema.json#/$defs/nonEmptyString" },
         "expected_behavior": { "type": ["string", "null"] },
         "actual_behavior": { "type": ["string", "null"] },
+        "observed_example": { "type": ["string", "null"] },
         "affected_surfaces": {
           "type": "array",
           "uniqueItems": true,

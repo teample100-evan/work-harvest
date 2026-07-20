@@ -143,7 +143,20 @@
             "$ref": "./common.schema.json#/$defs/nonEmptyString"
           },
           "impact": {
-            "type": ["string", "null"]
+            "oneOf": [
+              { "type": "string", "minLength": 1 },
+              { "type": "null" },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["description", "status", "basis"],
+                "properties": {
+                  "description": { "$ref": "./common.schema.json#/$defs/nonEmptyString" },
+                  "status": { "type": "string", "enum": ["expected", "observed", "measured", "user_reported"] },
+                  "basis": { "$ref": "./common.schema.json#/$defs/nonEmptyString" }
+                }
+              }
+            ]
           },
           "category": {
             "type": "string",

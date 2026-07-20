@@ -169,8 +169,14 @@ For the checkpoint delta:
   record maintenance excluded.
 - Set verification `method` and `observed_at`; a passed verification needs an actual command,
   artifact, manual observation, or external evidence.
+- Preserve exact limits or observed counts that materially explain a reproduction in
+  `problem.observed_example`; omit full payloads and HTML.
+- Store primary impact with `description`, evidence maturity `status`, and `basis`. Use `expected`
+  until QA, measurement, or user observation confirms the effect.
 - Record the reached and remaining completion gates. Use `milestone` for merged or reviewed work
   that still awaits QA, release, or operational confirmation.
+- Refresh `context_update.lifecycle` after an external status or gate change, and use structured
+  Context verification entries so the next task retains their provenance.
 
 For `final`, include at least one confirmed primary outcome and require the target completion gate
 to be reached with no remaining gates. If a meaningful gate was reached but later gates remain,

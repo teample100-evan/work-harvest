@@ -1,5 +1,9 @@
 # Work Harvest payloads
 
+The examples use YAML for readability. The Codex record-work workflow must serialize equivalent
+JSON when sending a create or capture payload so `#` inside factual text cannot become a YAML
+comment.
+
 ## Work item creation
 
 Use only after `work-item list` confirms no existing match.

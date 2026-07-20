@@ -20,10 +20,11 @@ const USAGE: &str = "Work Harvest CLI
 Usage:
   wh work-item create --input <file|-> [--root <path>] [--json]
   wh work-item update <id> --input <file|-> [--root <path>] [--json]
-  wh work-item list [--project <id>] [--status <status>] [--scope <scope>] [--reporting-mode <mode>] [--root <path>] [--json]
-  wh work-item show <id> [--root <path>] [--json]
-  wh checkpoint capture --input <file|-> [--root <path>] [--json]
+  wh work-item list [--project <id>] [--status <status>] [--scope <scope>] [--reporting-mode <mode>] [--compact] [--root <path>] [--json]
+  wh work-item show <id> [--compact] [--root <path>] [--json]
+  wh checkpoint capture --input <file|-> [--compact] [--root <path>] [--json]
   wh checkpoint last --work-item <id> [--root <path>] [--json]
+  wh checkpoint boundary --work-item <id> [--root <path>] [--json]
   wh report performance-note --work-item <id> [--output <path>] [--root <path>] [--json]
   wh report weekly --start <date> --end <date> [--scope <scope>] [--include-supporting] [--output <path>] [--root <path>] [--json]
   wh validate [--root <path>] [--include-examples] [--json]
@@ -87,13 +88,14 @@ struct CommandOptions {
     start: Option<String>,
     end: Option<String>,
     include_supporting: bool,
+    compact: bool,
     positionals: Vec<String>,
 }
 
 fn is_boolean_option(name: &str) -> bool {
     matches!(
         name,
-        "json" | "help" | "include-examples" | "include-supporting"
+        "json" | "help" | "include-examples" | "include-supporting" | "compact"
     )
 }
 
@@ -117,6 +119,7 @@ fn set_option(options: &mut CommandOptions, name: &str, value: Option<String>) {
         "start" => options.start = value,
         "end" => options.end = value,
         "include-supporting" => options.include_supporting = true,
+        "compact" => options.compact = true,
         _ => unreachable!("validated option"),
     }
 }
@@ -287,6 +290,36 @@ struct CheckpointCaptureOutput {
 }
 
 #[derive(Serialize)]
+struct CompactCheckpointCaptureOutput<'a> {
+    checkpoint: CompactCapturedCheckpoint<'a>,
+    work_item: CompactCapturedWorkItem<'a>,
+    context: CompactCapturedContext<'a>,
+    paths: &'a work_harvest_core::CheckpointPaths,
+}
+
+#[derive(Serialize)]
+struct CompactCapturedCheckpoint<'a> {
+    id: &'a str,
+    kind: &'a str,
+    captured_at: &'a str,
+    status_after: &'a str,
+    confidentiality: &'a str,
+}
+
+#[derive(Serialize)]
+struct CompactCapturedWorkItem<'a> {
+    id: &'a str,
+    status: &'a str,
+    updated_at: &'a str,
+}
+
+#[derive(Serialize)]
+struct CompactCapturedContext<'a> {
+    updated_at: &'a str,
+    last_checkpoint_id: Option<&'a str>,
+}
+
+#[derive(Serialize)]
 struct PerformanceNoteOutput {
     work_item: WorkItemDocument,
     checkpoint_count: usize,
@@ -315,6 +348,21 @@ struct WorkItemListOutput {
     work_items: Vec<WorkItemListEntry>,
 }
 
+#[derive(Debug, Serialize, PartialEq, Eq)]
+struct CompactWorkItemListEntry {
+    id: String,
+    project_id: String,
+    title: String,
+    status: String,
+    updated_at: String,
+    last_checkpoint_id: Option<String>,
+}
+
+#[derive(Serialize)]
+struct CompactWorkItemListOutput {
+    work_items: Vec<CompactWorkItemListEntry>,
+}
+
 impl From<StoredWorkItemRecord> for WorkItemListEntry {
     fn from(record: StoredWorkItemRecord) -> Self {
         Self {
@@ -331,6 +379,71 @@ impl From<StoredWorkItemRecord> for WorkItemListEntry {
             last_checkpoint_id: record.context.last_checkpoint_id,
         }
     }
+}
+
+impl From<&WorkItemListEntry> for CompactWorkItemListEntry {
+    fn from(item: &WorkItemListEntry) -> Self {
+        Self {
+            id: item.id.clone(),
+            project_id: item.project_id.clone(),
+            title: item.title.clone(),
+            status: item.status.clone(),
+            updated_at: item.updated_at.clone(),
+            last_checkpoint_id: item.last_checkpoint_id.clone(),
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct CompactWorkItem<'a> {
+    id: &'a str,
+    project_id: &'a str,
+    title: &'a str,
+    status: &'a str,
+    objective: &'a str,
+    desired_outcomes: &'a [String],
+    initiative_id: Option<&'a str>,
+    work_types: &'a [String],
+    tags: &'a [String],
+    updated_at: &'a str,
+}
+
+#[derive(Serialize)]
+struct CheckpointBoundary<'a> {
+    id: &'a str,
+    work_item_id: &'a str,
+    kind: &'a str,
+    captured_at: &'a str,
+    work_period: &'a work_harvest_core::CheckpointWorkPeriodDocument,
+    status_after: &'a str,
+    git: Option<&'a work_harvest_core::CheckpointGitDocument>,
+    paths: &'a work_harvest_core::StoredCheckpointPaths,
+}
+
+fn checkpoint_boundary(record: &StoredCheckpointRecord) -> CheckpointBoundary<'_> {
+    CheckpointBoundary {
+        id: &record.checkpoint.id,
+        work_item_id: &record.checkpoint.work_item_id,
+        kind: &record.checkpoint.kind,
+        captured_at: &record.checkpoint.captured_at,
+        work_period: &record.checkpoint.work_period,
+        status_after: &record.checkpoint.status_after,
+        git: record.checkpoint.git.as_ref(),
+        paths: &record.paths,
+    }
+}
+
+#[derive(Serialize)]
+struct CompactWorkItemShowOutput<'a> {
+    work_item: CompactWorkItem<'a>,
+    context: &'a WorkContextDocument,
+    last_checkpoint: Option<CheckpointBoundary<'a>>,
+    paths: &'a WorkItemPaths,
+}
+
+#[derive(Serialize)]
+struct CheckpointBoundaryOutput<'a> {
+    boundary: Option<CheckpointBoundary<'a>>,
 }
 
 #[derive(Serialize)]
@@ -460,7 +573,7 @@ fn handle_update_work_item(args: &[String]) -> Result<(), CliError> {
 fn handle_list_work_items(args: &[String]) -> Result<(), CliError> {
     let options = parse_options(
         args,
-        &["project", "status", "scope", "reporting-mode"],
+        &["project", "status", "scope", "reporting-mode", "compact"],
         false,
     )?;
     if options.help {
@@ -515,11 +628,25 @@ fn handle_list_work_items(args: &[String]) -> Result<(), CliError> {
             .collect::<Vec<_>>()
             .join("\n")
     };
-    print_result(&WorkItemListOutput { work_items }, options.json, message)
+    if options.compact {
+        let compact = work_items
+            .iter()
+            .map(CompactWorkItemListEntry::from)
+            .collect();
+        print_result(
+            &CompactWorkItemListOutput {
+                work_items: compact,
+            },
+            options.json,
+            message,
+        )
+    } else {
+        print_result(&WorkItemListOutput { work_items }, options.json, message)
+    }
 }
 
 fn handle_show_work_item(args: &[String]) -> Result<(), CliError> {
-    let options = parse_options(args, &[], true)?;
+    let options = parse_options(args, &["compact"], true)?;
     if options.help {
         print!("{USAGE}");
         return Ok(());
@@ -546,11 +673,32 @@ fn handle_show_work_item(args: &[String]) -> Result<(), CliError> {
             |checkpoint| format!("{} ({})", checkpoint.id, checkpoint.captured_at)
         )
     );
-    print_result(&result, options.json, message)
+    if options.compact {
+        let output = CompactWorkItemShowOutput {
+            work_item: CompactWorkItem {
+                id: &result.work_item.id,
+                project_id: &result.work_item.project_id,
+                title: &result.work_item.title,
+                status: &result.work_item.status,
+                objective: &result.work_item.objective,
+                desired_outcomes: &result.work_item.desired_outcomes,
+                initiative_id: result.work_item.classification.initiative_id.as_deref(),
+                work_types: &result.work_item.classification.work_types,
+                tags: &result.work_item.classification.tags,
+                updated_at: &result.work_item.updated_at,
+            },
+            context: &result.context,
+            last_checkpoint: result.last_checkpoint.as_ref().map(checkpoint_boundary),
+            paths: &result.paths,
+        };
+        print_result(&output, options.json, message)
+    } else {
+        print_result(&result, options.json, message)
+    }
 }
 
 fn handle_capture_checkpoint(args: &[String]) -> Result<(), CliError> {
-    let options = parse_options(args, &["input"], false)?;
+    let options = parse_options(args, &["input", "compact"], false)?;
     if options.help {
         print!("{USAGE}");
         return Ok(());
@@ -568,17 +716,37 @@ fn handle_capture_checkpoint(args: &[String]) -> Result<(), CliError> {
         context: result.context,
         paths: result.paths,
     };
-    print_result(
-        &output,
-        options.json,
-        format!(
-            "Captured checkpoint {}\n  record: {}\n  Markdown: {}\n  work item: {}",
-            output.checkpoint.id,
-            output.paths.checkpoint,
-            output.paths.checkpoint_markdown,
-            output.work_item.status
-        ),
-    )
+    let message = format!(
+        "Captured checkpoint {}\n  record: {}\n  Markdown: {}\n  work item: {}",
+        output.checkpoint.id,
+        output.paths.checkpoint,
+        output.paths.checkpoint_markdown,
+        output.work_item.status
+    );
+    if options.compact {
+        let compact = CompactCheckpointCaptureOutput {
+            checkpoint: CompactCapturedCheckpoint {
+                id: &output.checkpoint.id,
+                kind: &output.checkpoint.kind,
+                captured_at: &output.checkpoint.captured_at,
+                status_after: &output.checkpoint.status_after,
+                confidentiality: &output.checkpoint.confidentiality,
+            },
+            work_item: CompactCapturedWorkItem {
+                id: &output.work_item.id,
+                status: &output.work_item.status,
+                updated_at: &output.work_item.updated_at,
+            },
+            context: CompactCapturedContext {
+                updated_at: &output.context.updated_at,
+                last_checkpoint_id: output.context.last_checkpoint_id.as_deref(),
+            },
+            paths: &output.paths,
+        };
+        print_result(&compact, options.json, message)
+    } else {
+        print_result(&output, options.json, message)
+    }
 }
 
 fn handle_last_checkpoint(args: &[String]) -> Result<(), CliError> {
@@ -611,6 +779,33 @@ fn handle_last_checkpoint(args: &[String]) -> Result<(), CliError> {
             checkpoint: None,
             paths: None,
         },
+    };
+    print_result(&output, options.json, message)
+}
+
+fn handle_checkpoint_boundary(args: &[String]) -> Result<(), CliError> {
+    let options = parse_options(args, &["work-item"], false)?;
+    if options.help {
+        print!("{USAGE}");
+        return Ok(());
+    }
+    let work_item_id = options
+        .work_item
+        .as_deref()
+        .ok_or_else(|| CliError::usage("checkpoint boundary requires --work-item <id>"))?;
+    let root = resolve_data_root(options.root.as_deref())?;
+    let result = find_last_checkpoint(&root, work_item_id).map_err(map_query_error)?;
+    let message = result.as_ref().map_or_else(
+        || format!("No checkpoint found for {work_item_id}"),
+        |entry| {
+            format!(
+                "{}\t{}\t{}",
+                entry.checkpoint.id, entry.checkpoint.captured_at, entry.checkpoint.title
+            )
+        },
+    );
+    let output = CheckpointBoundaryOutput {
+        boundary: result.as_ref().map(checkpoint_boundary),
     };
     print_result(&output, options.json, message)
 }
@@ -794,6 +989,7 @@ fn execute(args: &[String]) -> Result<(), CliError> {
         ("work-item", Some("show")) => handle_show_work_item(&args[2..]),
         ("checkpoint", Some("capture")) => handle_capture_checkpoint(&args[2..]),
         ("checkpoint", Some("last")) => handle_last_checkpoint(&args[2..]),
+        ("checkpoint", Some("boundary")) => handle_checkpoint_boundary(&args[2..]),
         ("report", Some("performance-note")) => handle_performance_note(&args[2..]),
         ("report", Some("weekly")) => handle_weekly_report(&args[2..]),
         _ => Err(CliError::usage(format!(

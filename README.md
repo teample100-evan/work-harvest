@@ -214,59 +214,59 @@ work-items/AUTH-142/context.md
 ```bash
 pnpm wh work-item list
 pnpm wh work-item list --project jajak-front --status in_progress
-pnpm wh work-item show AUTH-142 --json
+pnpm wh work-item list --compact --json
+pnpm wh work-item show AUTH-142 --compact --json
 ```
 
-`work-item show`는 업무 메타데이터, 현재 context와 마지막 체크포인트를 함께 반환한다. 새 세션에서 업무 맥락을 읽을 때 사용하는 기본 명령이다.
+에이전트는 compact 목록으로 후보를 찾고 compact 상세에서 목표·현재 Context와 마지막 체크포인트 경계만 읽는다. 체크포인트 전문은 사실 확인이 필요할 때만 조회한다.
 
 ### 체크포인트 기록하기
 
 ```bash
-pnpm wh checkpoint capture --input checkpoint.yaml --json
+pnpm wh checkpoint capture --compact --input checkpoint.json --json
 ```
 
 예시:
 
-```yaml
-work_item_id: AUTH-142
-kind: progress
-source:
-  agent: codex
-  surface: desktop
-  session_ref: null
-  task_title: 인증 테스트 코드 작성
-title: 인증 갱신 기본 테스트 작성
-summary: 토큰 갱신과 요청 재시도의 기본 성공 경로를 검증했다.
-activities:
-  - refresh token 갱신 성공 테스트를 추가했다.
-verifications:
-  - type: test
-    description: 인증 갱신 기본 성공 경로 테스트
-    status: passed
-    command: pnpm test auth
-    evidence_refs:
-      - tests/auth/refresh-token.test.ts
-outcomes:
-  - description: 갱신 후 원 요청이 정상적으로 재시도되는 동작을 검증했다.
-    impact: null
-    evidence_refs:
-      - tests/auth/refresh-token.test.ts
-next_steps:
-  - 동시 요청 테스트 작성
-evidence:
-  files:
-    - tests/auth/refresh-token.test.ts
-  commands:
-    - pnpm test auth
-context_update:
-  current_state: 기본 성공 경로를 검증했고 동시 요청 테스트가 남아 있다.
-  verification:
-    completed:
-      - 인증 갱신 기본 성공 경로 테스트 통과
-    pending:
-      - 동시 요청 테스트
-  next_steps:
-    - 동시 요청 테스트 작성
+```json
+{
+  "work_item_id": "AUTH-142",
+  "kind": "progress",
+  "source": {
+    "agent": "codex",
+    "surface": "desktop",
+    "session_ref": null,
+    "task_title": "인증 테스트 코드 작성"
+  },
+  "title": "인증 갱신 기본 테스트 작성",
+  "summary": "토큰 갱신과 요청 재시도의 기본 성공 경로를 검증했다.",
+  "activities": ["refresh token 갱신 성공 테스트를 추가했다."],
+  "verifications": [{
+    "type": "test",
+    "description": "인증 갱신 기본 성공 경로 테스트",
+    "status": "passed",
+    "command": "pnpm test auth",
+    "evidence_refs": ["tests/auth/refresh-token.test.ts"]
+  }],
+  "outcomes": [{
+    "description": "갱신 후 원 요청이 정상적으로 재시도되는 동작을 검증했다.",
+    "impact": null,
+    "evidence_refs": ["tests/auth/refresh-token.test.ts"]
+  }],
+  "next_steps": ["동시 요청 테스트 작성"],
+  "evidence": {
+    "files": ["tests/auth/refresh-token.test.ts"],
+    "commands": ["pnpm test auth"]
+  },
+  "context_update": {
+    "current_state": "기본 성공 경로를 검증했고 동시 요청 테스트가 남아 있다.",
+    "verification": {
+      "completed": ["인증 갱신 기본 성공 경로 테스트 통과"],
+      "pending": ["동시 요청 테스트"]
+    },
+    "next_steps": ["동시 요청 테스트 작성"]
+  }
+}
 ```
 
 `context_update`는 전달한 필드만 교체한다. 배열 필드를 전달할 때는 현재 유효한 전체 목록을 전달하며, 빈 배열은 기존 목록을 비운다는 의미다.
@@ -274,7 +274,7 @@ context_update:
 ### 마지막 기록 확인하기
 
 ```bash
-pnpm wh checkpoint last --work-item AUTH-142 --json
+pnpm wh checkpoint boundary --work-item AUTH-142 --json
 ```
 
 에이전트는 이 결과를 이용해 “지난 체크포인트 이후”의 기록 범위를 결정한다.
@@ -351,16 +351,16 @@ $record-work를 사용해 오늘 작업은 여기까지 기록해줘.
 Skill 실행 순서:
 
 ```text
-work-item list
-→ work-item show
-→ checkpoint last
+work-item list --compact (세션의 첫 기록만)
+→ work-item show --compact (후보 확인이 필요할 때만)
+→ checkpoint boundary
 → 현재 세션과 저장소 근거 확인
-→ checkpoint capture
+→ checkpoint capture --compact
 → context 갱신
 → validate
 ```
 
-Skill은 기존 업무와 일치하는지 먼저 확인하고, 여러 후보가 비슷할 때만 사용자에게 선택을 요청한다. 테스트를 실행하지 않았다면 통과했다고 기록하지 않으며, 측정되지 않은 영향은 추정하지 않는다.
+Skill은 같은 세션에서 확정한 업무 ID를 재사용하고 목표가 달라질 때만 후보를 다시 탐색한다. 테스트를 실행하지 않았다면 통과했다고 기록하지 않으며, 측정되지 않은 영향은 추정하지 않는다. Context에는 현재 상태와 유효한 결정·검증·다음 작업·리스크만 유지한다.
 
 ## 사용 시나리오
 
@@ -414,7 +414,7 @@ Work Harvest는 코드 작업뿐 아니라 문서, 기획, 회의, 연구와 운
 새 세션에서 이어갈 수 있도록 현재 단계까지 기록하고 인수인계를 갱신해줘.
 ```
 
-Skill은 체크포인트를 먼저 생성한 다음 `context.json`과 `context.md`를 현재 상태로 갱신한다. 새 세션은 `work-item show <id>` 결과와 실제 코드를 다시 확인하고 시작한다.
+Skill은 체크포인트를 먼저 생성한 다음 `context.json`과 `context.md`를 현재 상태로 갱신한다. 새 세션은 `work-item show <id> --compact` 결과와 실제 코드를 다시 확인하고 시작한다.
 
 ### 업무를 완료하는 경우
 

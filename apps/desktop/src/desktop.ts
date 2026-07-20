@@ -534,6 +534,9 @@ export interface WeeklyReportInput {
 export interface WeeklyReportStats {
   work_item_count: number;
   checkpoint_count: number;
+  outcome_count: number;
+  current_risk_count: number;
+  current_next_step_count: number;
   redacted_checkpoint_count: number;
   excluded_checkpoint_count: number;
   unknown_period_checkpoint_count: number;

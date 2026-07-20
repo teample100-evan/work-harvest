@@ -18,10 +18,11 @@ const usage = `Work Harvest CLI
 
 Usage:
   wh work-item create --input <file|-> [--root <path>] [--json]
-  wh work-item list [--project <id>] [--status <status>] [--root <path>] [--json]
-  wh work-item show <id> [--root <path>] [--json]
-  wh checkpoint capture --input <file|-> [--root <path>] [--json]
+  wh work-item list [--project <id>] [--status <status>] [--compact] [--root <path>] [--json]
+  wh work-item show <id> [--compact] [--root <path>] [--json]
+  wh checkpoint capture --input <file|-> [--compact] [--root <path>] [--json]
   wh checkpoint last --work-item <id> [--root <path>] [--json]
+  wh checkpoint boundary --work-item <id> [--root <path>] [--json]
   wh report performance-note --work-item <id> [--output <path>] [--root <path>] [--json]
   wh validate [--root <path>] [--include-examples] [--json]
 
@@ -140,6 +141,7 @@ async function handleListWorkItems(args, validators) {
     extra: {
       project: { type: "string" },
       status: { type: "string" },
+      compact: { type: "boolean", default: false },
     },
   });
   if (options.help) {
@@ -160,12 +162,34 @@ async function handleListWorkItems(args, validators) {
         )
         .join("\n")
     : "No work items found";
-  printResult({ work_items: items }, options.json, message);
+  const outputItems = options.compact
+    ? items.map(
+        ({
+          id,
+          project_id,
+          title,
+          status,
+          updated_at,
+          last_checkpoint_id,
+        }) => ({
+          id,
+          project_id,
+          title,
+          status,
+          updated_at,
+          last_checkpoint_id,
+        }),
+      )
+    : items;
+  printResult({ work_items: outputItems }, options.json, message);
 }
 
 async function handleShowWorkItem(args, validators) {
   const { values: options, positionals } = parseCommandOptions(args, {
     positionals: true,
+    extra: {
+      compact: { type: "boolean", default: false },
+    },
   });
   if (options.help) {
     process.stdout.write(usage);
@@ -182,15 +206,41 @@ async function handleShowWorkItem(args, validators) {
     workItemId: positionals[0],
   });
   const last = result.last_checkpoint?.checkpoint;
+  const output = options.compact
+    ? {
+        work_item: {
+          id: result.work_item.id,
+          project_id: result.work_item.project_id,
+          title: result.work_item.title,
+          status: result.work_item.status,
+          objective: result.work_item.objective,
+          desired_outcomes: result.work_item.desired_outcomes,
+          initiative_id: result.work_item.classification.initiative_id,
+          work_types: result.work_item.classification.work_types,
+          tags: result.work_item.classification.tags,
+          updated_at: result.work_item.updated_at,
+        },
+        context: result.context,
+        last_checkpoint: result.last_checkpoint
+          ? checkpointBoundary(result.last_checkpoint)
+          : null,
+        paths: result.paths,
+      }
+    : result;
   printResult(
-    result,
+    output,
     options.json,
     `${result.work_item.id} ${result.work_item.title}\n  status: ${result.work_item.status}\n  current: ${result.context.current_state}\n  last checkpoint: ${last ? `${last.id} (${last.captured_at})` : "none"}`,
   );
 }
 
 async function handleCaptureCheckpoint(args, validators) {
-  const { values: options } = parseCommandOptions(args, { input: true });
+  const { values: options } = parseCommandOptions(args, {
+    input: true,
+    extra: {
+      compact: { type: "boolean", default: false },
+    },
+  });
   if (options.help) {
     process.stdout.write(usage);
     return;
@@ -198,8 +248,29 @@ async function handleCaptureCheckpoint(args, validators) {
   const root = resolveDataRoot(options.root);
   const input = await readStructuredInput(options.input);
   const result = await captureCheckpoint({ root, input, validators });
+  const output = options.compact
+    ? {
+        checkpoint: {
+          id: result.checkpoint.id,
+          kind: result.checkpoint.kind,
+          captured_at: result.checkpoint.captured_at,
+          status_after: result.checkpoint.status_after,
+          confidentiality: result.checkpoint.confidentiality,
+        },
+        work_item: {
+          id: result.work_item.id,
+          status: result.work_item.status,
+          updated_at: result.work_item.updated_at,
+        },
+        context: {
+          updated_at: result.context.updated_at,
+          last_checkpoint_id: result.context.last_checkpoint_id,
+        },
+        paths: result.paths,
+      }
+    : result;
   printResult(
-    result,
+    output,
     options.json,
     `Captured checkpoint ${result.checkpoint.id}\n  record: ${result.paths.checkpoint}\n  Markdown: ${result.paths.checkpoint_markdown}\n  work item: ${result.work_item.status}`,
   );
@@ -229,6 +300,48 @@ async function handleLastCheckpoint(args, validators) {
   const output = result ?? { checkpoint: null, paths: null };
   printResult(
     output,
+    options.json,
+    result
+      ? `${result.checkpoint.id}\t${result.checkpoint.captured_at}\t${result.checkpoint.title}`
+      : `No checkpoint found for ${options["work-item"]}`,
+  );
+}
+
+function checkpointBoundary(result) {
+  return {
+    id: result.checkpoint.id,
+    work_item_id: result.checkpoint.work_item_id,
+    kind: result.checkpoint.kind,
+    captured_at: result.checkpoint.captured_at,
+    work_period: result.checkpoint.work_period,
+    status_after: result.checkpoint.status_after,
+    git: result.checkpoint.git ?? null,
+    paths: result.paths,
+  };
+}
+
+async function handleCheckpointBoundary(args, validators) {
+  const { values: options } = parseCommandOptions(args, {
+    extra: {
+      "work-item": { type: "string" },
+    },
+  });
+  if (options.help) {
+    process.stdout.write(usage);
+    return;
+  }
+  if (!options["work-item"]) {
+    throw new CliError("checkpoint boundary requires --work-item <id>", {
+      exitCode: 2,
+    });
+  }
+  const result = await findLastCheckpoint({
+    root: resolveDataRoot(options.root),
+    validators,
+    workItemId: options["work-item"],
+  });
+  printResult(
+    { boundary: result ? checkpointBoundary(result) : null },
     options.json,
     result
       ? `${result.checkpoint.id}\t${result.checkpoint.captured_at}\t${result.checkpoint.title}`
@@ -297,6 +410,10 @@ export async function runCli(args) {
     }
     if (args[0] === "checkpoint" && args[1] === "last") {
       await handleLastCheckpoint(args.slice(2), validators);
+      return;
+    }
+    if (args[0] === "checkpoint" && args[1] === "boundary") {
+      await handleCheckpointBoundary(args.slice(2), validators);
       return;
     }
     if (args[0] === "report" && args[1] === "performance-note") {
